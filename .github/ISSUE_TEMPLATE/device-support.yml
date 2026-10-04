@@ -1,0 +1,44 @@
+name: Device support request
+description: Ask for support for a heater that connect() refuses, using the diagnostic report.
+title: "Device support: <model> firmware <x.y>"
+labels: ["device-support"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping. This only covers **read-only** support to start with. Nothing here
+        promises support for a model, and write support needs an observed write for the exact
+        model and firmware.
+
+        Run `AOSmithBLEClient.async_diagnose()` and paste `report.to_markdown()` below (it is
+        redacted by default; never use `redact=False`). See
+        "Does my heater work?" in the documentation for the steps.
+  - type: input
+    id: model
+    attributes:
+      label: Model on the rating plate
+      description: For example the model line, not the serial number.
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Diagnostic report
+      description: Paste the output of `report.to_markdown()`.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Does the official app work with this heater? Did the Bluetooth button press change anything?
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: My report has no Bluetooth address, no 18-character `02iQk...` value and no full serial number.
+          required: true
+        - label: I understand the diagnostic call only reads, and that support is not guaranteed.
+          required: true

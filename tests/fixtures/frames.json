@@ -1,0 +1,50 @@
+[
+  {"id": "init_request_slot1", "hex": "bdf20501d8", "source": "capture",
+   "note": "0xF2 init request, pairing slot 1"},
+  {"id": "init_response_slot_populated", "hex": "db2f1801303269516b3030303030304558414d504c4580de", "source": "constructed",
+   "note": "0xF2 response, slot populated: status=0x01, assetID='02iQk000000EXAMPLE', status=0x80"},
+  {"id": "init_response_slot_empty", "hex": "db2f18000000000000000000000000000000000000008072", "source": "constructed",
+   "note": "0xF2 response, slot empty: status=0x00, assetID field zeroed, status=0x80"},
+
+  {"id": "challenge_request", "hex": "bdf40412", "source": "capture",
+   "note": "0xF4 challenge request"},
+  {"id": "challenge_response_9312", "hex": "db4f07931280f4", "source": "constructed",
+   "note": "0xF4 response carrying nonce 0x9312"},
+
+  {"id": "f1_response_accepted", "hex": "db1f0580d2", "source": "constructed",
+   "note": "0xF1 response, status=0x80 (accepted)"},
+  {"id": "f1_response_rejected", "hex": "db1f05016a", "source": "constructed",
+   "note": "0xF1 response, status=0x01 (rejected)"},
+
+  {"id": "read_block11_full", "hex": "bda0070b001a04", "source": "capture",
+   "note": "read Block 11, start 0, 26 words (0x1A)"},
+  {"id": "read_block2_fault", "hex": "bda00702070166", "source": "capture",
+   "note": "read Block 2 param 7 (CURRENT_FAULT_ERROR_CODE), 1 word"},
+  {"id": "read_response_block2_fault_healthy", "hex": "db020902070000809c", "source": "hardware",
+   "note": "Block 2 param 7 read back as 0x0000 (healthy) on real hardware"},
+  {"id": "read_response_refused_generic", "hex": "db02070b00406a", "source": "constructed",
+   "note": "7-byte refusal stub shape (block, start, 0x40, crc), confirmed for this shape on Block 13 and Block 27 on real hardware"},
+
+  {"id": "write_setpoint_124f", "hex": "bd40080b00331c06", "source": "hardware",
+   "note": "write Block 11 param 0 (OPERATING_SETPOINT) = 124F, round((124-32)/1.8*256)=0x331C"},
+  {"id": "write_setpoint_126f", "hex": "bd40080b0034390c", "source": "capture"},
+  {"id": "write_setpoint_114f", "hex": "bd40080b002d8ece", "source": "capture"},
+  {"id": "write_setpoint_120f", "hex": "bd40080b0030e46e", "source": "capture"},
+  {"id": "write_mode_hybrid_permanent", "hex": "bd40080b0f000414", "source": "hardware"},
+  {"id": "write_mode_electric_1day", "hex": "bd40080b0f0101fe", "source": "capture"},
+  {"id": "write_mode_vacation_3day", "hex": "bd40080b0f030266", "source": "capture"},
+  {"id": "write_mode_heatpump_permanent", "hex": "bd40080b0f00054a", "source": "capture"},
+
+  {"id": "write_ack_setpoint", "hex": "db02070b008050", "source": "constructed",
+   "note": "write ack shape DB 02 07 <block> <param> 80 <crc> for the setpoint param"},
+  {"id": "write_ack_mode", "hex": "db02070b0f80fa", "source": "hardware",
+   "note": "observed verbatim on real hardware after a Block 11 param 15 write"},
+
+  {"id": "block11_status_electric_2day", "hex": "db02270b00331c058e02c708e401ab0000000000000000000000000000000000000000020180c2", "source": "constructed",
+   "note": "full 39-byte Block 11 status: setpoint 124F (0x331C), unknown constant 0x05, sensor bytes 8e02c708e401ab (all hardware-verified constants), 20 reserved zero bytes, duration=2, mode=ELECTRIC(1), status=0x80"},
+
+  {"id": "read_session_not_established_block11", "hex": "db02070b001ade", "source": "constructed",
+   "note": "session-not-established echo for a Block 11 full read (block=0x0B, start=0x00, words=0x1A) -- rsp[3..5] equal the request instead of carrying a status byte"},
+  {"id": "read_session_not_established_block2_fault", "hex": "db0207020701bc", "source": "constructed",
+   "note": "session-not-established echo for the Block 2 fault read (block=0x02, start=0x07, words=0x01)"}
+]
