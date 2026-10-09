@@ -131,3 +131,92 @@ async def test_resolver_that_raises_leaves_no_link(monkeypatch):
     assert calls == []
     assert client._client is None
     assert client.is_connected is False
+
+
+async def _connected(monkeypatch, on_disconnect):
+    fake = FakeBleakClient(_full_happy_path_responder())
+    calls = patch_establish(monkeypatch, fake)
+    client = AOSmithBLEClient(
+        device=object(), pairing_code=b"123456", on_disconnect=on_disconnect
+    )
+    await client.connect()
+    return client, fake, calls
+
+
+def _report_on_close(fake, calls):
+    """bleak invokes the disconnected callback during a deliberate close too."""
+
+    async def disconnect_and_report():
+        calls[0]["kwargs"]["disconnected_callback"](fake)
+        fake.is_connected = False
+
+    fake.disconnect = disconnect_and_report
+
+
+async def test_unexpected_drop_fires_on_disconnect(monkeypatch):
+    fired: list[int] = []
+    client, fake, calls = await _connected(monkeypatch, lambda: fired.append(1))
+
+    calls[0]["kwargs"]["disconnected_callback"](fake)
+
+    assert fired == [1]
+
+
+async def test_deliberate_disconnect_does_not_fire(monkeypatch):
+    fired: list[int] = []
+    client, fake, calls = await _connected(monkeypatch, lambda: fired.append(1))
+    _report_on_close(fake, calls)
+
+    await client.disconnect()
+
+    assert fired == []
+
+
+async def test_release_does_not_fire(monkeypatch):
+    fired: list[int] = []
+    client, fake, calls = await _connected(monkeypatch, lambda: fired.append(1))
+    _report_on_close(fake, calls)
+
+    await client.async_release(60)
+
+    assert fired == []
+
+
+async def test_failed_connect_teardown_does_not_fire(monkeypatch):
+    # An unmatched profile makes connect() fail after the link is up and
+    # then close it; that close is not a loss the host should hear about.
+    from aosmith_ble.exceptions import UnknownDeviceError
+    from test_client_session import _unknown_model_responder
+
+    fired: list[int] = []
+    fake = FakeBleakClient(_unknown_model_responder())
+    calls = patch_establish(monkeypatch, fake)
+    client = AOSmithBLEClient(
+        device=object(), pairing_code=b"123456", on_disconnect=lambda: fired.append(1)
+    )
+    _report_on_close(fake, calls)
+
+    with pytest.raises(UnknownDeviceError):
+        await client.connect()
+
+    assert fired == []
+
+
+async def test_raising_callback_is_swallowed(monkeypatch):
+    def boom():
+        raise RuntimeError("host bug")
+
+    client, fake, calls = await _connected(monkeypatch, boom)
+
+    # Must not raise into bleak's disconnect handling.
+    calls[0]["kwargs"]["disconnected_callback"](fake)
+
+
+async def test_no_callback_passed_when_hook_unset(monkeypatch):
+    fake = FakeBleakClient(_full_happy_path_responder())
+    calls = patch_establish(monkeypatch, fake)
+
+    client = AOSmithBLEClient(device=object(), pairing_code=b"123456")
+    await client.connect()
+
+    assert "disconnected_callback" not in calls[0]["kwargs"]

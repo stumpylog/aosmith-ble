@@ -123,6 +123,23 @@ async def test_connect_populates_device_info():
     assert client.device_info.serial == SERIAL_HPTS50
 
 
+def _unknown_model_responder():
+    """Answers the session handshake, then reports a model no profile matches."""
+
+    def responder(cmd: bytes) -> list[bytes]:
+        if cmd == p.init_request():
+            return [_fixture("init_response_slot_populated")]
+        if cmd == p.challenge_request():
+            return [_fixture("challenge_response_9312")]
+        if cmd[:4] == bytes([0xBD, 0xF1, 0x19, 0x01]):
+            return [_fixture("f1_response_accepted")]
+        if cmd == p.read_request(0, 0, 20):
+            return [_response(bytes(2 * 16) + b"NOTHPTS!", block=0, start=0)]
+        return []
+
+    return responder
+
+
 def _responder_with_serial_read(serial_responses: list[bytes]):
     """The happy-path responder, but with the serial read answered by
     `serial_responses` instead (empty list = silence = a ProtocolError
@@ -329,18 +346,7 @@ async def test_failed_connect_closes_the_link_instead_of_orphaning_it(monkeypatc
 
     from aosmith_ble import client as client_mod
 
-    def responder(cmd: bytes) -> list[bytes]:
-        if cmd == p.init_request():
-            return [_fixture("init_response_slot_populated")]
-        if cmd == p.challenge_request():
-            return [_fixture("challenge_response_9312")]
-        if cmd[:4] == bytes([0xBD, 0xF1, 0x19, 0x01]):
-            return [_fixture("f1_response_accepted")]
-        if cmd == p.read_request(0, 0, 20):
-            return [_response(bytes(2 * 16) + b"NOTHPTS!", block=0, start=0)]
-        return []
-
-    fake = FakeBleakClient(responder)
+    fake = FakeBleakClient(_unknown_model_responder())
 
     async def fake_establish_connection(_cls, _device, _name, **_kwargs):
         await fake.connect()

@@ -91,10 +91,12 @@ class AOSmithBLEClient:
         *,
         client_class: type[BleakClient] = BleakClient,
         device_resolver: Callable[[], BLEDevice | None] | None = None,
+        on_disconnect: Callable[[], None] | None = None,
     ) -> None:
         self._device = device
         self._client_class = client_class
         self._device_resolver = device_resolver
+        self._on_disconnect = on_disconnect
         self._pairing_code = (
             pairing_code.encode() if isinstance(pairing_code, str) else pairing_code
         )
@@ -178,6 +180,8 @@ class AOSmithBLEClient:
         refresh = self._make_refresh(device)
         if refresh is not None:
             extra["ble_device_callback"] = refresh
+        if self._on_disconnect is not None:
+            extra["disconnected_callback"] = self._on_link_lost
 
         try:
             self._client = await bleak_retry_connector.establish_connection(
@@ -252,11 +256,9 @@ class AOSmithBLEClient:
         self._session_ok = False
         self._profile = None
         self._info = DeviceInfo()
-        if self._client is not None:
-            try:
-                await self._client.disconnect()
-            finally:
-                self._client = None
+        client, self._client = self._client, None
+        if client is not None:
+            await client.disconnect()
 
     async def async_release(self, seconds: float) -> None:
         """Drop the connection and refuse to reconnect for `seconds`, so the
@@ -370,6 +372,17 @@ class AOSmithBLEClient:
                     }
                 )
         return tuple(entries)
+
+    def _on_link_lost(self, link: BleakClient) -> None:
+        """bleak's disconnected callback. Reports only an unexpected loss:
+        a deliberate `disconnect()` and the failed-`connect()` teardown both
+        swap `self._client` out before closing, so `link` is no longer it."""
+        if link is not self._client or self._on_disconnect is None:
+            return
+        try:
+            self._on_disconnect()
+        except Exception:  # noqa: BLE001 - a host callback must not break bleak
+            _LOGGER.exception("on_disconnect callback raised")
 
     def _on_notify(self, _char: object, data: bytearray) -> None:
         raw = bytes(data)
