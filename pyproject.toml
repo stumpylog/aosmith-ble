@@ -20,9 +20,9 @@ dependencies = [
   "bleak>=0.21",
   "bleak-retry-connector>=3.4",
 ]
-optional-dependencies.dev = [ "pytest>=8", "pytest-asyncio>=0.24" ]
 
 [dependency-groups]
+dev = [ "pytest>=8", "pytest-asyncio>=0.24" ]
 docs = [ "zensical" ]
 
 [tool.hatch]
