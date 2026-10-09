@@ -13,6 +13,7 @@ import logging
 import time
 from types import TracebackType
 
+import bleak_retry_connector
 from bleak import BleakClient, BleakScanner
 from bleak.backends.device import BLEDevice
 
@@ -86,8 +87,11 @@ class AOSmithBLEClient:
         pairing_code: bytes | str,
         asset_id: bytes | str | None = None,
         timeout: float = DEFAULT_TIMEOUT,
+        *,
+        client_class: type[BleakClient] = BleakClient,
     ) -> None:
         self._device = device
+        self._client_class = client_class
         self._pairing_code = (
             pairing_code.encode() if isinstance(pairing_code, str) else pairing_code
         )
@@ -144,20 +148,13 @@ class AOSmithBLEClient:
             device = found
 
         try:
-            from bleak_retry_connector import (
-                BleakOutOfConnectionSlotsError,
-                establish_connection,
+            self._client = await bleak_retry_connector.establish_connection(
+                self._client_class,
+                device,
+                getattr(device, "name", None) or str(device),
             )
-
-            try:
-                self._client = await establish_connection(
-                    BleakClient, device, getattr(device, "name", None) or str(device)
-                )
-            except BleakOutOfConnectionSlotsError as err:
-                raise ConnectionSlotsExhaustedError(str(err)) from err
-        except ImportError:  # pragma: no cover - fallback for non-HA use
-            self._client = BleakClient(device, timeout=30.0)
-            await self._client.connect()
+        except bleak_retry_connector.BleakOutOfConnectionSlotsError as err:
+            raise ConnectionSlotsExhaustedError(str(err)) from err
 
         await self._client.start_notify(CHAR_RX_UUID, self._on_notify)
         await asyncio.sleep(0.2)
