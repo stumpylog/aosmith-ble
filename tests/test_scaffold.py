@@ -1,9 +1,15 @@
+import tomllib
+from pathlib import Path
+
 import aosmith_ble
 from aosmith_ble.profiles.bundled import HPTS50_MODEL_BYTES
 
 
 def test_package_importable_and_versioned():
-    assert aosmith_ble.__version__ == "0.1.0"
+    # pyproject.toml is the single source of the version.
+    pyproject = Path(__file__).parent.parent / "pyproject.toml"
+    expected = tomllib.loads(pyproject.read_text())["project"]["version"]
+    assert aosmith_ble.__version__ == expected
 
 
 def test_public_api_surface_is_importable():
@@ -62,7 +68,3 @@ def test_public_surface_exports_the_feature_model():
     assert aosmith_ble.FieldScope is not None
     assert aosmith_ble.Trust is not None
     assert not hasattr(aosmith_ble, "HeaterState")
-
-
-def test_version_is_0_1_0():
-    assert aosmith_ble.__version__ == "0.1.0"

@@ -7,6 +7,8 @@ profile that gates every read's and write's trust.
 
 from __future__ import annotations
 
+from importlib.metadata import version as _dist_version
+
 from . import protocol
 from .client import AOSmithBLEClient, async_discover, pairing_code_from_name
 from .const import Mode
@@ -26,7 +28,7 @@ from .models import DeviceInfo, Fault, Feature, FeatureSet
 from .profiles import FieldName, FieldScope, Profile, Trust
 from .profiles.bundled import match_profile
 
-__version__ = "0.1.0"
+__version__ = _dist_version("aosmith-ble")
 
 __all__ = [
     "AOSmithBLEClient",
