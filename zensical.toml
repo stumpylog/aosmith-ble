@@ -25,7 +25,7 @@ nav = [
   ] },
   { "Development" = [
     "development/index.md", "development/handoff.md", "development/design-principles.md",
-    "development/test-vectors.md",
+    "development/test-vectors.md", "development/releasing.md",
   ] },
 ]
 
