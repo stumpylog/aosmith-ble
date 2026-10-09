@@ -134,6 +134,7 @@ The `0xF1` response needs the 18-character assetID (for example `02iQk000000EXAM
 - **Not in any readable block** (**verified on hardware**). Blocks 0, 1, 2, 8, 11, 13, 26 and 27 were probed. The model and part of the serial are present (word-swapped, see [Blocks](blocks.md)), but the assetID is not.
 - **From the `0xF2` init response**, only while pairing slot 1 is populated (`status=0x01`). An empty slot returns zeros (**verified on hardware**).
 - **One Bluetooth button press repopulates the slot** (**verified on hardware**). The installation guide says one press activates the Bluetooth signal for 10 minutes and holding for 3 seconds turns it off (**from the handbook**), so do not hold the button.
+- **A press while the Bluetooth signal is already active does nothing** (**verified on hardware**). A slot that has gone empty reopens only after Bluetooth is turned off and back on.
 
 Once captured, the assetID can be cached indefinitely. A cached value authenticates even when the slot later reads empty (**verified on hardware**). Bootstrap: press the button once, read the assetID, store it. No cloud account or A.O. Smith credentials are needed, and the button is not needed for reads once the assetID is known.
 

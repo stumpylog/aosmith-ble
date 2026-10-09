@@ -165,6 +165,17 @@ class AOSmithBLEClient:
         """Establish the BLE link and wire up notifications -- no session,
         no profile match. Shared by `connect()` and `async_diagnose()`,
         which otherwise have incompatible failure/teardown semantics."""
+        # A link lost under us is dead but was never closed. Opening a new one
+        # without closing it first is rejected by the heater (hardware-
+        # observed), so close the stale one first. It is swapped out before
+        # the close so its disconnected callback is not reported as a loss.
+        stale, self._client = self._client, None
+        if stale is not None:
+            try:
+                await stale.disconnect()
+            except Exception:  # noqa: BLE001 - it is already dead
+                _LOGGER.debug("closing the stale link failed", exc_info=True)
+
         if self._device_resolver is not None:
             fresh = self._device_resolver()
             if fresh is not None:

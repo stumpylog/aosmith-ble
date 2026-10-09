@@ -2,6 +2,10 @@
 
 ## 0.1.0
 
+- `connect()` after a link lost under the client now closes the dead link
+  before opening a new one. Without this the heater rejected the new session
+  (hardware-observed), so a reused client could not reconnect after an
+  unexpected drop.
 - `AOSmithBLEClient` takes three optional keyword-only hooks for embedding in a
   long-running application: `client_class` (the bleak client class to connect
   with), `device_resolver` (a callback returning the freshest `BLEDevice`, used

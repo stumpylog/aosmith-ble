@@ -220,3 +220,41 @@ async def test_no_callback_passed_when_hook_unset(monkeypatch):
     await client.connect()
 
     assert "disconnected_callback" not in calls[0]["kwargs"]
+
+
+async def test_reconnect_after_unexpected_drop_closes_the_stale_link(monkeypatch):
+    # After an abrupt loss the old bleak client is dead but never closed. A
+    # new link opened without closing it first was rejected by the heater on
+    # real hardware, so connect() must close the stale one before opening.
+    closed: list[str] = []
+
+    class Link(FakeBleakClient):
+        def __init__(self, name: str) -> None:
+            super().__init__(_full_happy_path_responder())
+            self.name = name
+
+        async def disconnect(self) -> None:
+            closed.append(self.name)
+            await super().disconnect()
+
+    links = iter([Link("old"), Link("new")])
+
+    async def fake_establish_connection(cls, device, name, **kwargs):
+        link = next(links)
+        await link.connect()
+        return link
+
+    monkeypatch.setattr(
+        bleak_retry_connector, "establish_connection", fake_establish_connection
+    )
+    monkeypatch.setattr(client_mod, "_SETTLE", 0.0)
+
+    client = AOSmithBLEClient(device=object(), pairing_code=b"123456")
+    await client.connect()
+    client._client.is_connected = False  # the link dropped under us
+
+    await client.connect()
+
+    assert closed == ["old"]
+    assert client._client.name == "new"
+    assert client.is_connected is True
