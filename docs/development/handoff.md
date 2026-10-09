@@ -11,7 +11,6 @@ What is still open. Read `README.md` and `CHANGELOG.md` for what the library doe
 | `CODEC_REGISTRY` is a plain mutable `dict` | Wrap in `types.MappingProxyType`. |
 | `duration_days` type checking | The codec range-checks but does not type-check, so `1.5` raises `TypeError` instead of `ValidationError`, and `bool` is accepted as `0` or `1`. Neither reaches the wire. |
 | `assert self._profile is not None` in the write path | In both write methods and in session and read helpers. Stripped under `python -O`; use an explicit `if ... raise`. |
-| The link-opening step (`_open_link`) catches `ImportError` around the whole `establish_connection` call | Narrow the `try` to the `from bleak_retry_connector import ...` line. |
 | `protocol.set_setpoint_request` and `set_mode_request` are public but unused by the client | Only tests use them (to build expected frames), `set_setpoint_request` has no ceiling check, and neither is re-exported at top level. Keep as documented low-level helpers or move out of the public surface. |
 | `pyproject.toml` pins `bleak>=0.21` with no upper bound | Consider `bleak>=0.21,<4`. |
 

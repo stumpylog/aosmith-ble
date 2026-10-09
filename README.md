@@ -41,6 +41,25 @@ asyncio.run(main())
 
 Press the Bluetooth button on the control panel once before first use. The device hands out the "assetID" it authenticates sessions against only while its pairing slot is populated. Cache `AOSmithBLEClient.asset_id` (for example with the device address) and pass it back as `asset_id=` so the button press is a one-time step.
 
+## Embedding in a long-running application
+
+A host that owns Bluetooth scanning and wants the client to survive reconnects can pass three optional, keyword-only hooks:
+
+```python
+client = AOSmithBLEClient(
+    device,
+    pairing_code=code,
+    asset_id=cached_asset_id,
+    device_resolver=lambda: my_scanner.latest_device(address),
+    client_class=MyBleakClientSubclass,
+    on_disconnect=lambda: schedule_reconnect(),
+)
+```
+
+- `device_resolver` returns the freshest `BLEDevice` for the heater, or `None` if there is nothing newer. It is called on every `connect()` and on every connection retry, so a handle that changes between connects (a different adapter or relay) is picked up. Passing a `BLEDevice` as `device` and no resolver keeps the current behavior. Passing an address string makes the library run its own scan, so a host that owns scanning should pass a `BLEDevice` or a resolver instead.
+- `client_class` is the bleak client class used to connect, `BleakClient` by default. Pass a subclass, such as `bleak_retry_connector.BleakClientWithServiceCache`, to change how the link behaves.
+- `on_disconnect` is called with no arguments when the link is lost unexpectedly. It is not called for `disconnect()`, `async_release()` or a failed `connect()`. It runs on the event loop, must not block, and an exception it raises is logged and ignored. A drop while `connect()` is still setting up the session calls it as well, and `connect()` then raises its own error.
+
 ## Safety model
 
 Every write goes through one profile-gated path: setpoint and mode are checked against the profile's verified limits (never above 140F, 130F by default), a fault-active device is read-only, and every write is read back and compared before the call succeeds. The public API cannot write an arbitrary block or parameter.

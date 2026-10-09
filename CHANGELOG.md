@@ -2,6 +2,13 @@
 
 ## 0.1.0
 
+- `AOSmithBLEClient` takes three optional keyword-only hooks for embedding in a
+  long-running application: `client_class` (the bleak client class to connect
+  with), `device_resolver` (a callback returning the freshest `BLEDevice`, used
+  on every connect and every connection retry), and `on_disconnect` (a callback
+  for unexpected link loss). All default to the previous behavior.
+- `bleak-retry-connector` is now imported unconditionally; the unreachable
+  fallback to a bare `BleakClient` is gone.
 - `HeaterState` is removed. `AOSmithBLEClient.async_get_state()` now returns a
   `FeatureSet` (`Mapping[FieldName, Feature]`) -- a `Feature` per profile
   field graded at least `min_trust` (default `Trust.OK`), each carrying its
