@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from types import TracebackType
 
 import bleak_retry_connector
@@ -89,9 +90,11 @@ class AOSmithBLEClient:
         timeout: float = DEFAULT_TIMEOUT,
         *,
         client_class: type[BleakClient] = BleakClient,
+        device_resolver: Callable[[], BLEDevice | None] | None = None,
     ) -> None:
         self._device = device
         self._client_class = client_class
+        self._device_resolver = device_resolver
         self._pairing_code = (
             pairing_code.encode() if isinstance(pairing_code, str) else pairing_code
         )
@@ -136,10 +139,34 @@ class AOSmithBLEClient:
     ) -> None:
         await self.disconnect()
 
+    def _make_refresh(self, device: BLEDevice) -> Callable[[], BLEDevice] | None:
+        """The `ble_device_callback` for `establish_connection`, or None.
+
+        Wraps `device_resolver` so a None answer ("nothing newer") falls back
+        to the last handle handed out instead of reaching the connector."""
+        resolver = self._device_resolver
+        if resolver is None:
+            return None
+        latest = device
+
+        def refresh() -> BLEDevice:
+            nonlocal latest
+            fresh = resolver()
+            if fresh is not None:
+                latest = fresh
+                self._device = fresh
+            return latest
+
+        return refresh
+
     async def _open_link(self) -> None:
         """Establish the BLE link and wire up notifications -- no session,
         no profile match. Shared by `connect()` and `async_diagnose()`,
         which otherwise have incompatible failure/teardown semantics."""
+        if self._device_resolver is not None:
+            fresh = self._device_resolver()
+            if fresh is not None:
+                self._device = fresh
         device = self._device
         if isinstance(device, str):
             found = await BleakScanner.find_device_by_address(device, timeout=20.0)
@@ -147,11 +174,17 @@ class AOSmithBLEClient:
                 raise NotConnectedError(f"device {device} not found")
             device = found
 
+        extra: dict[str, object] = {}
+        refresh = self._make_refresh(device)
+        if refresh is not None:
+            extra["ble_device_callback"] = refresh
+
         try:
             self._client = await bleak_retry_connector.establish_connection(
                 self._client_class,
                 device,
                 getattr(device, "name", None) or str(device),
+                **extra,
             )
         except bleak_retry_connector.BleakOutOfConnectionSlotsError as err:
             raise ConnectionSlotsExhaustedError(str(err)) from err
