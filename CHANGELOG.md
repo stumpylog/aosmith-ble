@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.1.1
+
+- New `ChallengeRejectedError`, a `SessionError` subclass, raised when the
+  heater rejects the session challenge. The message now says to press the
+  Bluetooth button instead of blaming the cached assetID.
+- New `UnsupportedConfigurationError`, a `ValidationError` subclass with a
+  `reason` (`ConfigurationIssue.UNITS` or `ConfigurationIssue.MTU`), raised for
+  the Celsius-display check and the minimum-MTU check. Existing
+  `except ValidationError` handlers still catch it.
+- `UnknownDeviceError` now carries `model` and `firmware`, so a caller can say
+  what was refused. `DeviceInfo` gains `firmware` (`(major, minor)`), set on a
+  successful `connect()`.
+- New `AOSmithBLEClient.async_close()`: waits for any read or write in flight,
+  closes the link, and makes every later `connect()` and operation, including
+  ones already queued, raise `NotConnectedError`. Idempotent. `disconnect()`
+  is unchanged.
+- Exceptions from bleak and bleak-retry-connector propagate unchanged and may
+  contain the device address. The `__cause__` of `ConnectionSlotsExhaustedError`
+  keeps the original text.
+- Library exception text no longer embeds raw frame bytes (which can carry the
+  assetID, the serial, or an HMAC of the assetID); it gives the frame length and
+  header only. The connection name passed to `bleak-retry-connector` is a fixed
+  `"iCOMM water heater"` instead of the advertised name, the address is gone
+  from the device-not-found message, and `ConnectionSlotsExhaustedError` has a
+  fixed message with the original error chained as its cause. The
+  `ValueError` from `pairing_code_from_name` no longer echoes the name.
+
 ## 0.1.0
 
 - `connect()` after a link lost under the client now closes the dead link

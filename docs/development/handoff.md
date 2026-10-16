@@ -16,7 +16,7 @@ What is still open. Read `README.md` and `CHANGELOG.md` for what the library doe
 
 ## Home Assistant integration
 
-Needs a specification first: domain `aosmith_ble`, entity table, operation-mode mapping, config flow, coordinator, error and repair handling, diagnostics redaction. Not started. It belongs in its own repository (`ha-aosmith-ble`, via HACS). The diagnostics-only mode for unmatched devices can build on `async_diagnose()`.
+The specification is written and lives in the `ha-aosmith-ble` repository (HACS-distributed). The library-side prerequisites it needs (`ChallengeRejectedError`, `async_close()`, identity on a refused device, `UnsupportedConfigurationError`, and identifier-free exception text) are in 0.1.1. The diagnostics-only mode for unmatched devices builds on `async_diagnose()`.
 
 ## Lower priority
 

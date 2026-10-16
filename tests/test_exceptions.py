@@ -35,3 +35,10 @@ def test_exceptions_carry_a_message():
     assert str(ValidationError("setpoint 145.0 exceeds profile maximum 130.0")) == (
         "setpoint 145.0 exceeds profile maximum 130.0"
     )
+
+
+def test_unknown_device_error_defaults_identity_to_none():
+    exc = UnknownDeviceError("no profile")
+    assert exc.model is None
+    assert exc.firmware is None
+    assert str(exc) == "no profile"

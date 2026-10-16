@@ -59,6 +59,7 @@ client = AOSmithBLEClient(
 - `device_resolver` returns the freshest `BLEDevice` for the heater, or `None` if there is nothing newer. It is called on every `connect()` and on every connection retry, so a handle that changes between connects (a different adapter or relay) is picked up. Passing a `BLEDevice` as `device` and no resolver keeps the current behavior. Passing an address string makes the library run its own scan, so a host that owns scanning should pass a `BLEDevice` or a resolver instead.
 - `client_class` is the bleak client class used to connect, `BleakClient` by default. Pass a subclass, such as `bleak_retry_connector.BleakClientWithServiceCache`, to change how the link behaves.
 - `on_disconnect` is called with no arguments when the link is lost unexpectedly. It is not called for `disconnect()`, `async_release()` or a failed `connect()`. It runs on the event loop, must not block, and an exception it raises is logged and ignored. A drop while `connect()` is still setting up the session calls it as well, and `connect()` then raises its own error.
+- `async_close()` closes the link for good. It waits for a read or write in flight, then closes the link, and afterwards `connect()` and every other operation, including ones already queued, raise `NotConnectedError`. Use it on unload or shutdown so a queued poll cannot reopen the link. `disconnect()` is unchanged and leaves the client reusable.
 
 ## Safety model
 

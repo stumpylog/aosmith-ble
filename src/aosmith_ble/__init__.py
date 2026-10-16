@@ -15,6 +15,8 @@ from .const import Mode
 from .diagnostics import DiagnosticReport, probe_presence
 from .exceptions import (
     AOSmithError,
+    ChallengeRejectedError,
+    ConfigurationIssue,
     ConnectionSlotsExhaustedError,
     NotConnectedError,
     NotPairedError,
@@ -22,6 +24,7 @@ from .exceptions import (
     ReadRefusedError,
     SessionError,
     UnknownDeviceError,
+    UnsupportedConfigurationError,
     ValidationError,
 )
 from .models import DeviceInfo, Fault, Feature, FeatureSet
@@ -33,6 +36,8 @@ __version__ = _dist_version("aosmith-ble")
 __all__ = [
     "AOSmithBLEClient",
     "AOSmithError",
+    "ChallengeRejectedError",
+    "ConfigurationIssue",
     "ConnectionSlotsExhaustedError",
     "DeviceInfo",
     "DiagnosticReport",
@@ -50,6 +55,7 @@ __all__ = [
     "SessionError",
     "Trust",
     "UnknownDeviceError",
+    "UnsupportedConfigurationError",
     "ValidationError",
     "async_discover",
     "match_profile",

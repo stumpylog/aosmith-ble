@@ -54,7 +54,7 @@ FeatureSet = Mapping[FieldName, Feature]
 class DeviceInfo:
     """Identity read from block 0, plus the assetID learned from 0xF2.
 
-    All three fields are populated once, at connect time, and never change
+    All four fields are populated once, at connect time, and never change
     for the lifetime of a connection -- unlike a `FeatureSet`, which is
     re-read on every `async_get_state()` call.
     """
@@ -62,3 +62,4 @@ class DeviceInfo:
     model: str | None = None
     serial: str | None = None
     asset_id: str | None = None
+    firmware: tuple[int, int] | None = None

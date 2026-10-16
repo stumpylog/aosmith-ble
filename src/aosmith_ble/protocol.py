@@ -89,13 +89,24 @@ def challenge_response(challenge: bytes, asset_id: bytes) -> bytes:
     return frame(bytes([HDR_REQUEST, Cmd.CHALLENGE_RESPONSE, 0x19, 0x01]) + digest)
 
 
+def describe_frame(frame: bytes) -> str:
+    """A frame for an error message: its length and its three header bytes
+    (header, command, length), never its payload.
+
+    Payloads carry the assetID (the init response), the serial (Block 0), and
+    HMACs derived from the assetID (the challenge response). Error text is
+    logged and shown by callers, so it must not hold any of those.
+    """
+    return f"{len(frame)} bytes, header {frame[:3].hex(' ')}"
+
+
 def _validate(rsp: bytes, min_len: int) -> None:
     if len(rsp) < min_len:
-        raise ProtocolError(f"response too short: {rsp.hex(' ')}")
+        raise ProtocolError(f"response too short: {describe_frame(rsp)}")
     if rsp[0] != HDR_RESPONSE:
-        raise ProtocolError(f"bad response header: {rsp.hex(' ')}")
+        raise ProtocolError(f"bad response header: {describe_frame(rsp)}")
     if not check(rsp):
-        raise ProtocolError(f"CRC mismatch: {rsp.hex(' ')}")
+        raise ProtocolError(f"CRC mismatch: {describe_frame(rsp)}")
 
 
 def parse_init(rsp: bytes) -> tuple[int, bytes]:
@@ -163,8 +174,7 @@ def parse_read(
     if status != STATUS_OK:
         if len(rsp) == 7 and status == STATUS_REFUSED:
             raise ReadRefusedError(
-                f"block {request_block} refused at start {request_start}: "
-                f"{rsp.hex(' ')}"
+                f"block {request_block} refused at start {request_start}"
             )
         if (
             len(rsp) == 7
@@ -174,19 +184,19 @@ def parse_read(
         ):
             raise SessionError(
                 "read echoed the request instead of a status byte; the "
-                f"session challenge has not been accepted: {rsp.hex(' ')}"
+                "session challenge has not been accepted"
             )
         raise ProtocolError(
             f"read refused (status 0x{status:02X}); "
-            f"session may not be established: {rsp.hex(' ')}"
+            f"session may not be established: {describe_frame(rsp)}"
         )
     if len(rsp) < 8:
-        raise ProtocolError(f"read response has no payload: {rsp.hex(' ')}")
+        raise ProtocolError(f"read response has no payload: {describe_frame(rsp)}")
     if rsp[3] != request_block or rsp[4] != request_start:
         raise ProtocolError(
             f"read response echoed block={rsp[3]} start={rsp[4]}, "
             f"expected block={request_block} start={request_start} "
-            f"(stale or mismatched reply): {rsp.hex(' ')}"
+            f"(stale or mismatched reply): {describe_frame(rsp)}"
         )
     return bytes(rsp[5:-2])
 

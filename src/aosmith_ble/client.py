@@ -30,6 +30,8 @@ from .const import (
 )
 from .diagnostics import DiagnosticReport, probe_presence
 from .exceptions import (
+    ChallengeRejectedError,
+    ConfigurationIssue,
     ConnectionSlotsExhaustedError,
     NotConnectedError,
     NotPairedError,
@@ -37,6 +39,7 @@ from .exceptions import (
     ReadRefusedError,
     SessionError,
     UnknownDeviceError,
+    UnsupportedConfigurationError,
     ValidationError,
 )
 from .models import DeviceInfo, Feature, FeatureSet
@@ -46,6 +49,7 @@ from .profiles.bundled import match_profile
 _LOGGER = logging.getLogger(__name__)
 
 _PAIRING_CODE_LEN = 6
+CONNECTION_NAME = "iCOMM water heater"
 DEFAULT_TIMEOUT = 8.0
 _SETTLE = 0.4
 _MIN_MTU = 50  # 47-byte Block 11 response + a 3-byte ATT header margin
@@ -66,7 +70,7 @@ def pairing_code_from_name(name: str) -> bytes:
     """``iCOMM-AC000W037123456`` -> ``b"123456"``."""
     digits = "".join(ch for ch in name if ch.isdigit())
     if len(digits) < _PAIRING_CODE_LEN:
-        raise ValueError(f"cannot derive pairing code from {name!r}")
+        raise ValueError("cannot derive a pairing code from the advertised name")
     return digits[-_PAIRING_CODE_LEN:].encode()
 
 
@@ -111,6 +115,7 @@ class AOSmithBLEClient:
         self._profile: Profile | None = None
         self._info = DeviceInfo()
         self._released_until: float = 0.0
+        self._closed = False
         self._capture_sink: list[dict[str, str]] | None = None
 
     @property
@@ -184,7 +189,7 @@ class AOSmithBLEClient:
         if isinstance(device, str):
             found = await BleakScanner.find_device_by_address(device, timeout=20.0)
             if found is None:
-                raise NotConnectedError(f"device {device} not found")
+                raise NotConnectedError("device not found")
             device = found
 
         extra: dict[str, object] = {}
@@ -198,11 +203,13 @@ class AOSmithBLEClient:
             self._client = await bleak_retry_connector.establish_connection(
                 self._client_class,
                 device,
-                getattr(device, "name", None) or str(device),
+                CONNECTION_NAME,
                 **extra,
             )
         except bleak_retry_connector.BleakOutOfConnectionSlotsError as err:
-            raise ConnectionSlotsExhaustedError(str(err)) from err
+            raise ConnectionSlotsExhaustedError(
+                "the Bluetooth adapter or proxy has no free connection slots"
+            ) from err
 
         await self._client.start_notify(CHAR_RX_UUID, self._on_notify)
         await asyncio.sleep(0.2)
@@ -231,7 +238,12 @@ class AOSmithBLEClient:
             return None
         return getattr(backend, "_mtu_size", None)
 
+    def _refuse_if_closed(self) -> None:
+        if self._closed:
+            raise NotConnectedError("client is closed")
+
     async def connect(self) -> None:
+        self._refuse_if_closed()
         if self.is_connected and self._session_ok:
             return
         if time.monotonic() < self._released_until:
@@ -241,8 +253,14 @@ class AOSmithBLEClient:
 
         try:
             await self._open_link()
+            # async_close() does not take part in connect() (connect holds no
+            # lock), so re-check after each await that can outlast it. The
+            # teardown below then closes the link this call just opened.
+            self._refuse_if_closed()
             await self._establish_session()
+            self._refuse_if_closed()
             await self._match_and_validate_profile()
+            self._refuse_if_closed()
         except BaseException:
             # Close the link too, not just the session state. A refused
             # device (an unmatched profile, a bad MTU) fails the same way on
@@ -269,7 +287,9 @@ class AOSmithBLEClient:
         self._info = DeviceInfo()
         client, self._client = self._client, None
         if client is not None:
-            await client.disconnect()
+            # Shielded so a cancelled caller (a close timeout) cannot leave
+            # the link open with no reference left to close it.
+            await asyncio.shield(client.disconnect())
 
     async def async_release(self, seconds: float) -> None:
         """Drop the connection and refuse to reconnect for `seconds`, so the
@@ -277,6 +297,21 @@ class AOSmithBLEClient:
         leaves the device in an unwanted state) can connect instead."""
         await self.disconnect()
         self._released_until = time.monotonic() + seconds
+
+    async def async_close(self) -> None:
+        """Close the link for good.
+
+        Marks the client closed first, so nothing queued behind an operation
+        in flight can reconnect even if this call is cancelled by a caller's
+        timeout. Then waits for the in-flight read or write to finish (it
+        takes the client lock) and closes the link. Afterwards `connect()`,
+        `async_diagnose()` and every other operation, including ones already
+        queued behind the in-flight one, raise `NotConnectedError`. Idempotent. Unlike `disconnect()`, which leaves
+        the client reusable, this is for unload and shutdown.
+        """
+        self._closed = True
+        async with self._lock:
+            await self.disconnect()
 
     async def async_diagnose(self, max_block: int = 40) -> DiagnosticReport:
         """Connect, probe, and disconnect independently of `connect()`'s
@@ -295,7 +330,9 @@ class AOSmithBLEClient:
         `async_release()` runs while it waits, checking only before waiting
         would let it proceed into the release window once the lock frees up.
         """
+        self._refuse_if_closed()
         async with self._lock:
+            self._refuse_if_closed()
             if time.monotonic() < self._released_until:
                 raise NotConnectedError(
                     f"connection released until {self._released_until - time.monotonic():.0f}s from now"
@@ -398,7 +435,7 @@ class AOSmithBLEClient:
     def _on_notify(self, _char: object, data: bytearray) -> None:
         raw = bytes(data)
         if p.is_at_command(raw):
-            _LOGGER.debug("dropping unsolicited AT command: %r", raw)
+            _LOGGER.debug("dropping unsolicited AT command (%d bytes)", len(raw))
             return
         self._queue.put_nowait(raw)
 
@@ -415,7 +452,7 @@ class AOSmithBLEClient:
                 self._queue.get(), timeout or self._timeout
             )
         except asyncio.TimeoutError as err:
-            raise ProtocolError(f"no response to {cmd.hex(' ')}") from err
+            raise ProtocolError(f"no response to {p.describe_frame(cmd)}") from err
         if self._capture_sink is not None:
             self._capture_sink.append(
                 {
@@ -451,8 +488,9 @@ class AOSmithBLEClient:
             p.challenge_response(challenge, self._asset_id), label="challenge_response"
         )
         if not p.challenge_accepted(rsp):
-            raise SessionError(
-                "challenge rejected; the cached assetID is probably wrong"
+            raise ChallengeRejectedError(
+                "the heater rejected the session challenge; press the Bluetooth "
+                "button once and reconnect so a fresh assetID is read"
             )
         self._session_ok = True
 
@@ -477,23 +515,27 @@ class AOSmithBLEClient:
         profile = match_profile(model_bytes, firmware)
         if profile is None:
             raise UnknownDeviceError(
-                f"no bundled profile for model={model_bytes!r} firmware={firmware}"
+                f"no bundled profile for model={model_bytes!r} firmware={firmware}",
+                model=p.deswap_ascii(model_bytes),
+                firmware=firmware,
             )
 
         mtu = await self._negotiated_mtu()
         if mtu is not None and mtu < _MIN_MTU:
-            raise ValidationError(
+            raise UnsupportedConfigurationError(
                 f"negotiated MTU {mtu} is too small "
-                f"(need at least {_MIN_MTU} for a full Block 11 response)"
+                f"(need at least {_MIN_MTU} for a full Block 11 response)",
+                reason=ConfigurationIssue.MTU,
             )
 
         units_payload = await self._raw_read(_UNITS_BLOCK, _UNITS_PARAM, 1)
         units = p.param(units_payload, 0)
         if units != 0:
-            raise ValidationError(
+            raise UnsupportedConfigurationError(
                 f"device UNITS={units} (expected 0=Fahrenheit); this "
                 "library's codecs assume Fahrenheit-from-Celsius×256 "
-                "unconditionally and would decode/encode incorrectly"
+                "unconditionally and would decode/encode incorrectly",
+                reason=ConfigurationIssue.UNITS,
             )
 
         self._profile = profile
@@ -524,6 +566,7 @@ class AOSmithBLEClient:
             model=p.deswap_ascii(model_bytes),
             serial=serial,
             asset_id=self.asset_id,
+            firmware=firmware,
         )
 
     async def async_get_state(self, min_trust: Trust = Trust.OK) -> FeatureSet:
@@ -532,6 +575,7 @@ class AOSmithBLEClient:
         `min_trust`. A field graded below `min_trust` is simply absent from
         the result -- never present with a placeholder value."""
         async with self._lock:
+            self._refuse_if_closed()
             return await self._read_state(min_trust)
 
     async def _read_state(self, min_trust: Trust = Trust.OK) -> FeatureSet:
@@ -670,7 +714,7 @@ class AOSmithBLEClient:
         """
         rsp = await self._exchange(request)
         if not p.write_accepted(rsp, block, param):
-            raise ProtocolError(f"write rejected: {rsp.hex(' ')}")
+            raise ProtocolError(f"write rejected: {p.describe_frame(rsp)}")
         readback = await self._raw_read(block, param, len(expected_words))
         actual = tuple(p.param(readback, i) for i in range(len(expected_words)))
         if actual != expected_words:
@@ -684,6 +728,7 @@ class AOSmithBLEClient:
         matched profile's own limits, and unconditionally outside the
         absolute 140F ceiling regardless of profile."""
         async with self._lock:
+            self._refuse_if_closed()
             if not self.is_connected or not self._session_ok or self._profile is None:
                 await self.connect()
             assert self._profile is not None
@@ -731,6 +776,7 @@ class AOSmithBLEClient:
         back from the device is never echoed into a write.
         """
         async with self._lock:
+            self._refuse_if_closed()
             if not self.is_connected or not self._session_ok or self._profile is None:
                 await self.connect()
             assert self._profile is not None

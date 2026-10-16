@@ -2,7 +2,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from aosmith_ble.models import Feature
+from aosmith_ble.models import DeviceInfo, Feature
 from aosmith_ble.profiles import FieldName, Trust
 
 
@@ -29,3 +29,7 @@ def test_heater_state_no_longer_exists():
     import aosmith_ble.models as models_mod
 
     assert not hasattr(models_mod, "HeaterState")
+
+
+def test_device_info_firmware_defaults_to_none():
+    assert DeviceInfo().firmware is None

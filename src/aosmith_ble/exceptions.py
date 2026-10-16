@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 
 class AOSmithError(Exception):
     """Base class for all library errors."""
@@ -30,12 +32,24 @@ class NotConnectedError(AOSmithError):
 class SessionError(AOSmithError):
     """No valid session exists.
 
-    Raised when the 0xF1 challenge response is explicitly rejected, and also
-    when a read comes back in the shape the device uses when no session has
-    been established at all (or one was lost) -- the response echoes the
-    request's block, start and word count instead of a status byte, which is
-    not the same wire shape as a genuine block-absent refusal
-    (``ReadRefusedError``).
+    Raised for a lost or never-established session: a read comes back in the
+    shape the device uses when no session has been established (or one was
+    lost), where the response echoes the request's block, start and word
+    count instead of a status byte. That is not the same wire shape as a
+    genuine block-absent refusal (``ReadRefusedError``). A rejected challenge
+    response raises the subclass ``ChallengeRejectedError``.
+    """
+
+
+class ChallengeRejectedError(SessionError):
+    """The heater rejected the session challenge response.
+
+    A subclass of ``SessionError`` so existing handlers still catch it. It is
+    its own type because the recovery differs from a lost session: the
+    assetID used was not accepted, so a fresh one has to be read from the
+    pairing slot (a Bluetooth button press), and a single rejection has had
+    non-auth causes before (a stale link), so a caller usually retries once
+    on a fresh link before treating it as an authentication failure.
     """
 
 
@@ -56,7 +70,21 @@ class UnknownDeviceError(AOSmithError):
     evidence for how this firmware handles anything this library might send
     or expect to read. A diagnostics report is still produced so the
     allowlist can grow.
+
+    ``model`` (deswapped, as in ``DeviceInfo.model``) and ``firmware``
+    ``(major, minor)`` say what was refused. The client always sets both.
     """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        model: str | None = None,
+        firmware: tuple[int, int] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.model = model
+        self.firmware = firmware
 
 
 class ValidationError(AOSmithError):
@@ -65,6 +93,29 @@ class ValidationError(AOSmithError):
     support (an out-of-range setpoint, an unsupported mode, a write while a
     fault is active).
     """
+
+
+class ConfigurationIssue(StrEnum):
+    """Why a device or its link was refused as unsupported."""
+
+    UNITS = "units"
+    MTU = "mtu"
+
+
+class UnsupportedConfigurationError(ValidationError):
+    """The device or link is in a configuration this library cannot work
+    with, and the user can change it: the display units are not Fahrenheit
+    (``UNITS``) or the negotiated ATT MTU is too small for a full response
+    (``MTU``).
+
+    A subclass of ``ValidationError``, so existing handlers still catch it.
+    ``reason`` lets a caller choose the right instruction without parsing
+    the message.
+    """
+
+    def __init__(self, message: str, *, reason: ConfigurationIssue) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class ConnectionSlotsExhaustedError(AOSmithError):
