@@ -11,7 +11,7 @@ from importlib.metadata import version as _dist_version
 
 from . import protocol
 from .client import AOSmithBLEClient, async_discover, pairing_code_from_name
-from .const import Mode
+from .const import HotWaterAvailability, Mode
 from .diagnostics import DiagnosticReport, probe_presence
 from .exceptions import (
     AOSmithError,
@@ -23,6 +23,7 @@ from .exceptions import (
     ProtocolError,
     ReadRefusedError,
     SessionError,
+    SessionExpiredError,
     UnknownDeviceError,
     UnsupportedConfigurationError,
     ValidationError,
@@ -46,6 +47,7 @@ __all__ = [
     "FeatureSet",
     "FieldName",
     "FieldScope",
+    "HotWaterAvailability",
     "Mode",
     "NotConnectedError",
     "NotPairedError",
@@ -53,6 +55,7 @@ __all__ = [
     "ProtocolError",
     "ReadRefusedError",
     "SessionError",
+    "SessionExpiredError",
     "Trust",
     "UnknownDeviceError",
     "UnsupportedConfigurationError",

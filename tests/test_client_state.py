@@ -1,6 +1,6 @@
 import aosmith_ble.crc as crc_mod
 from aosmith_ble.client import AOSmithBLEClient
-from aosmith_ble.const import Mode
+from aosmith_ble.const import HotWaterAvailability, Mode
 from aosmith_ble.models import Feature
 from aosmith_ble import protocol as p
 from aosmith_ble.profiles import FieldName, Trust
@@ -48,6 +48,8 @@ def _responder(block11: bytes, fault: bytes):
             return [block11]
         if cmd == p.read_request(2, 7, 1):
             return [fault]
+        if cmd[:4] == bytes([0xBD, 0xA0, 0x07, 27]):
+            return [_block27(cmd, 0, (0, 0, 0), 10)]
         return []
 
     return responder
@@ -287,3 +289,60 @@ async def test_a_block_span_wider_than_one_read_is_refused():
     with pytest.raises(ValidationError, match="single-read limit"):
         await client.async_get_state(min_trust=Trust.PARTIAL)
     assert client._client.written == []  # nothing oversized hit the wire
+
+
+def _block27(
+    cmd: bytes, power: int, energy: tuple[int, int, int], availability: int
+) -> bytes:
+    """A Block 27 reply for the span `cmd` asked for, carrying params 6-9
+    and 23 where that span covers them."""
+    start, count = cmd[4], cmd[5]
+    values = {6: power, 7: energy[0], 8: energy[1], 9: energy[2], 23: availability}
+    words = [values.get(start + i, 0) for i in range(count)]
+    payload = b"".join(w.to_bytes(2, "big") for w in words)
+    body = (
+        bytearray([0xDB, 0x02, 0x00, 27, start])
+        + bytearray(payload)
+        + bytearray([0x80])
+    )
+    body[2] = len(body) + 1
+    return crc_mod.frame(bytes(body))
+
+
+async def test_block27_fields_come_from_one_read_at_start_6():
+    block11 = _block11_response(0x331C, 0, Mode.HYBRID, 0, 0, 0)
+    base = _responder(block11, _fault_healthy_response())
+
+    def responder(cmd: bytes) -> list[bytes]:
+        if cmd[:4] == bytes([0xBD, 0xA0, 0x07, 27]):
+            return [_block27(cmd, 356, (0x0000, 0x000E, 0xB5C9), 10)]
+        return base(cmd)
+
+    client = _client_with_matched_profile(responder)
+    features = await client.async_get_state(min_trust=Trust.PARTIAL)
+
+    assert features[FieldName.POWER_W].value == 356
+    assert features[FieldName.ENERGY_WH].value == 964041
+    assert features[FieldName.HOT_WATER_AVAILABILITY].value is HotWaterAvailability.HIGH
+    reads_27 = [c for c in client._client.written if c[1] == 0xA0 and c[3] == 27]
+    assert reads_27 == [p.read_request(27, 6, 18)]
+
+
+async def test_availability_is_absent_at_the_default_trust():
+    block11 = _block11_response(0x331C, 0, Mode.HYBRID, 0, 0, 0)
+    base = _responder(block11, _fault_healthy_response())
+
+    def responder(cmd: bytes) -> list[bytes]:
+        if cmd[:4] == bytes([0xBD, 0xA0, 0x07, 27]):
+            return [_block27(cmd, 0, (0, 0, 1), 5)]
+        return base(cmd)
+
+    client = _client_with_matched_profile(responder)
+    features = await client.async_get_state()
+
+    assert FieldName.HOT_WATER_AVAILABILITY not in features
+    assert features[FieldName.ENERGY_WH].value == 1
+    # Fields below the requested trust are dropped before reading, so the
+    # Block 27 read narrows to params 6-9.
+    reads_27 = [c for c in client._client.written if c[1] == 0xA0 and c[3] == 27]
+    assert reads_27 == [p.read_request(27, 6, 4)]

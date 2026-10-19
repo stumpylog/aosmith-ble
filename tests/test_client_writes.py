@@ -74,6 +74,16 @@ def _healthy_state_responses() -> dict:
     return {"block11": block11_bytes, "fault": fault_bytes}
 
 
+def _is_block27_read(cmd: bytes) -> bool:
+    return cmd[:4] == bytes([0xBD, 0xA0, 0x07, 27])
+
+
+def _block27_reply(cmd: bytes) -> bytes:
+    """An all-zero Block 27 reply shaped to whatever span was asked for: the
+    span depends on the trust a caller reads at."""
+    return _read_response(27, cmd[4], bytes(2 * cmd[5]))
+
+
 def _read_response(block: int, start: int, payload: bytes) -> bytes:
     body = (
         bytearray([0xDB, 0x02, 0x00, block, start])
@@ -209,6 +219,8 @@ async def test_async_set_setpoint_refuses_while_fault_active():
             return [responses["block11"]]
         if cmd == p.read_request(2, 7, 1):
             return [fault_active_bytes]
+        if _is_block27_read(cmd):
+            return [_block27_reply(cmd)]
         return []
 
     client = _client_with_matched_profile(responder)
@@ -228,6 +240,8 @@ async def test_async_set_mode_refuses_while_fault_active():
             return [responses["block11"]]
         if cmd == p.read_request(2, 7, 1):
             return [fault_active_bytes]
+        if _is_block27_read(cmd):
+            return [_block27_reply(cmd)]
         return []
 
     client = _client_with_matched_profile(responder)
@@ -248,6 +262,8 @@ async def test_async_set_setpoint_happy_path_writes_and_verifies():
             return [responses["block11"]]
         if cmd == p.read_request(2, 7, 1):
             return [responses["fault"]]
+        if _is_block27_read(cmd):
+            return [_block27_reply(cmd)]
         if cmd == p.set_setpoint_request(124.0):
             return [write_ack]
         if cmd == p.read_request(11, 0, 1):
@@ -272,6 +288,8 @@ async def test_async_set_setpoint_raises_on_readback_mismatch():
             return [responses["block11"]]
         if cmd == p.read_request(2, 7, 1):
             return [responses["fault"]]
+        if _is_block27_read(cmd):
+            return [_block27_reply(cmd)]
         if cmd == p.set_setpoint_request(124.0):
             return [write_ack]
         if cmd == p.read_request(11, 0, 1):
@@ -295,6 +313,8 @@ async def test_async_set_setpoint_raises_when_the_device_rejects_the_write():
             return [responses["block11"]]
         if cmd == p.read_request(2, 7, 1):
             return [responses["fault"]]
+        if _is_block27_read(cmd):
+            return [_block27_reply(cmd)]
         if cmd == p.set_setpoint_request(124.0):
             return [refused_ack]
         return []
@@ -320,6 +340,8 @@ async def test_async_set_mode_happy_path_writes_and_verifies(mode, duration):
             return [responses["block11"]]
         if cmd == p.read_request(2, 7, 1):
             return [responses["fault"]]
+        if _is_block27_read(cmd):
+            return [_block27_reply(cmd)]
         if cmd == request:
             return [write_ack]
         if cmd == p.read_request(11, 15, 1):
@@ -342,6 +364,8 @@ async def test_async_set_mode_raises_on_readback_mismatch():
             return [responses["block11"]]
         if cmd == p.read_request(2, 7, 1):
             return [responses["fault"]]
+        if _is_block27_read(cmd):
+            return [_block27_reply(cmd)]
         if cmd == p.set_mode_request(int(Mode.HYBRID), 0):
             return [write_ack]
         if cmd == p.read_request(11, 15, 1):
@@ -364,6 +388,8 @@ async def test_a_timed_out_write_is_not_retried():
             return [responses["block11"]]
         if cmd == p.read_request(2, 7, 1):
             return [responses["fault"]]
+        if _is_block27_read(cmd):
+            return [_block27_reply(cmd)]
         return []  # silence for the write itself
 
     client = _client_with_matched_profile(responder)
@@ -389,6 +415,8 @@ async def test_a_write_does_not_deadlock_against_its_own_state_read():
             return [responses["block11"]]
         if cmd == p.read_request(2, 7, 1):
             return [responses["fault"]]
+        if _is_block27_read(cmd):
+            return [_block27_reply(cmd)]
         if cmd == p.set_setpoint_request(124.0):
             return [write_ack]
         if cmd == p.read_request(11, 0, 1):
@@ -512,6 +540,8 @@ async def test_writes_refuse_cleanly_when_fault_is_not_readable_at_ok_trust():
             return [responses["block11"]]
         if cmd == p.read_request(2, 7, 1):
             return [responses["fault"]]
+        if _is_block27_read(cmd):
+            return [_block27_reply(cmd)]
         return []
 
     client = _client_with_matched_profile(responder)

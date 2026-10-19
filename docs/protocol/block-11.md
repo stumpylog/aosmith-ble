@@ -14,7 +14,7 @@ Parameter names are the manufacturer's labels.
 | 17    | `VACATION_MODE_REMAINING_DAYS` | holds the set days while Vacation is active, kept after a cancel |
 | 18    | `GUEST_MODE_REMAINING_DAYS`    | countdown, not retested for Guest                                |
 | 19    | `ELECTRIC_MODE_REMAINING_DAYS` | countdown, verified on hardware, see below                       |
-| 20    | `HOT_WATER_PLUS_LEVEL`         | not returned on firmware 6.3 (the read wraps), see [Commands](commands.md#read-semantics) |
+| 20    | `HOT_WATER_PLUS_LEVEL`         | not returned on firmware 6.3 (the read returns the setpoint), see [Commands](commands.md#read-semantics) |
 
 Params 17-19 are separate remaining-day counters. The official app never requests them (it reads only params 0-15); the `0x0000` readings come from 20-word reads made outside the app.
 
@@ -75,7 +75,7 @@ DB 02 27 0B 00 <setpoint hi> <setpoint lo> <const> <7 bytes> <20 bytes zero> <du
 | 5-6     | 2    | setpoint             | param 0, Celsius times 256, big-endian                             |
 | 7       | 1    | unknown constant     | `0x05` in every capture                                            |
 | 8-14    | 7    | undecoded "sensor"   | constant in every capture and live run, see below                  |
-| 15-34   | 20   | zeros                | zero in captures; params 9 and 14 (offsets 23-24 and 33-34) read `0x0004` in some live runs, meaning unverified, see [open questions](../research/open-questions.md) |
+| 15-34   | 20   | zeros                | zero in captures; unbacked params here echo the previous read, which explains `0x0004` in params 9 and 14 in some live runs, see below |
 | 35      | 1    | duration             | high byte of param 15, days, 0 = permanent                         |
 | 36      | 1    | mode                 | low byte of param 15, enum 1-5                                     |
 | 37      | 1    | status               | `0x80` = OK                                                        |
@@ -89,7 +89,9 @@ The constant at `[7]` and the 7 bytes at `[8..14]` straddle word boundaries, so 
 
 ## Unnamed parameters 1-5 and 7-14
 
-No meaning is known. Read as `/256` temperatures, params 1-4 look plausible but too low for a tank (**unverified**):
+Params 5, 7, 8, 9 and 12 are not backed: they return whatever the previous read put at the same index (**verified on hardware**, see [Commands](commands.md#unbacked-words-echo-the-previous-read)). Params 9 and 14 reading `0x0004` after reads of other blocks is that echo, not device state (**unverified** for 14, which held 0 in the echo test because the other block also had 0 there). Params 1-4 did not follow the previous read, so they are backed.
+
+For params 1-4 no meaning is known. Read as `/256` temperatures, params 1-4 look plausible but too low for a tank (**unverified**):
 
 ```text
 param 1 = 0x058E (42 F)   param 2 = 0x02C7 (37 F)

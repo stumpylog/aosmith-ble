@@ -206,6 +206,8 @@ async def test_async_get_state_does_not_re_read_the_serial():
         if cmd == p.read_request(11, 0, 20)
         else [_response(bytes(2), block=2, start=7)]
         if cmd == p.read_request(2, 7, 1)
+        else [_response(bytes(2 * cmd[5]), block=27, start=cmd[4])]
+        if cmd[:4] == bytes([0xBD, 0xA0, 0x07, 27])
         else []
     )
     await client.async_get_state()

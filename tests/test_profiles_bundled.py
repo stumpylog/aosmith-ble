@@ -22,6 +22,11 @@ def test_hpts50_profile_field_trust_grades():
     assert profile.field_map["serial"].read is Trust.PARTIAL
     assert profile.field_map["guest_days_remaining"].read is Trust.UNVERIFIED
     assert profile.field_map["electric_days_remaining"].read is Trust.OK
+    assert profile.field_map["power_w"].read is Trust.OK
+    assert profile.field_map["energy_wh"].read is Trust.OK
+    assert profile.field_map["hot_water_availability"].read is Trust.PARTIAL
+    for name in ("power_w", "energy_wh", "hot_water_availability"):
+        assert profile.field_map[name].write is Trust.UNSUPPORTED
 
 
 def test_hpts50_profile_guest_is_never_writable():
@@ -90,6 +95,9 @@ def test_hpts50_state_fields_exclude_model_and_serial():
         FieldName.VACATION_DAYS_REMAINING,
         FieldName.GUEST_DAYS_REMAINING,
         FieldName.ELECTRIC_DAYS_REMAINING,
+        FieldName.POWER_W,
+        FieldName.ENERGY_WH,
+        FieldName.HOT_WATER_AVAILABILITY,
     }
 
 

@@ -669,5 +669,8 @@ def test_field_name_has_one_member_per_bundled_field():
         "vacation_days_remaining",
         "guest_days_remaining",
         "electric_days_remaining",
+        "power_w",
+        "energy_wh",
+        "hot_water_availability",
     }
     assert {member.value for member in FieldName} == expected

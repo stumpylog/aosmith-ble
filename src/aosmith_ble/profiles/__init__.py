@@ -80,6 +80,9 @@ class FieldName(StrEnum):
     VACATION_DAYS_REMAINING = "vacation_days_remaining"
     GUEST_DAYS_REMAINING = "guest_days_remaining"
     ELECTRIC_DAYS_REMAINING = "electric_days_remaining"
+    POWER_W = "power_w"
+    ENERGY_WH = "energy_wh"
+    HOT_WATER_AVAILABILITY = "hot_water_availability"
 
 
 class FieldScope(Enum):

@@ -82,6 +82,21 @@ _HPTS50_6_3 = Profile(
             FieldName.ELECTRIC_DAYS_REMAINING,
             FieldSpec(block=11, param=19, words=1, codec="u16", read=Trust.OK),
         ),
+        # Block 27 is read once, at start 6 for 18 words (params 6-23).
+        (
+            FieldName.POWER_W,
+            FieldSpec(block=27, param=6, words=1, codec="u16", read=Trust.OK),
+        ),
+        (
+            FieldName.ENERGY_WH,
+            FieldSpec(block=27, param=7, words=3, codec="u48", read=Trust.OK),
+        ),
+        (
+            FieldName.HOT_WATER_AVAILABILITY,
+            FieldSpec(
+                block=27, param=23, words=1, codec="availability", read=Trust.PARTIAL
+            ),
+        ),
     ),
 )
 

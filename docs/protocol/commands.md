@@ -41,13 +41,26 @@ BD A0 07 0B 00 14 ..   Block 11, params 0-19
 BD A0 07 0B 14 01 ..   Block 11, param 20 (HOT_WATER_PLUS_LEVEL)
 ```
 
-The param 20 frame and `HOT_WATER_PLUS_LEVEL` at that index are **unverified**. On firmware 6.3, Blocks 2 and 11 repeat with period 20 over BLE, so a read at param 20 returns the setpoint again (`p20 == p0`) and `HOT_WATER_PLUS_LEVEL` is not returned. No `0x0000 = NORMAL_OPERATION` reading is claimed.
+The param 20 frame and `HOT_WATER_PLUS_LEVEL` at that index are **unverified**. On firmware 6.3 a read at Block 11 param 20 returns the setpoint (`p20 == p0`), so `HOT_WATER_PLUS_LEVEL` is not returned. That fits the buffer echo below: a start-20 read gets the previous read's word 0, which is usually the setpoint (**unverified** as the cause). No `0x0000 = NORMAL_OPERATION` reading is claimed.
+
+### Unbacked words echo the previous read
+
+A word the heater does not back comes back holding whatever the previous read put at the same position in the reply (**verified on hardware**):
+
+- After a Block 27 read, Block 11 params 7, 8, 9 and 12 held Block 27's words 7, 8, 9 and 12, including live values that had changed since the read before. The real Block 11 params (0-4, 6, 15, 17-19) did not change.
+- After a Block 11 read, Block 0 words 2-4, 7-9, 12 and 15 held Block 11's values.
+- The stale buffer survives a disconnect: the first Block 11 read of a new connection carried Block 27 values from a read about 10 minutes and one connection earlier.
+- Two Block 11 reads in a row return identical data.
+
+So an unbacked word is not data, and a value that appears to change after reading a different block is not a state change. Reads at a non-zero start offset are otherwise normal: Block 27 served words 20-25 at start 20 (6 words returned for 8 asked).
 
 A read the device will not serve returns a 7-byte stub carrying `0x40` where a successful response carries `0x80`:
 
 ```text
 BD A0 07 1B 1C 14 ..  ->  DB 02 07 1B 1C 40 50    (Block 27 words 28+ unavailable on this unit)
 ```
+
+A stub carrying `0x10` instead means the session has expired. See [Session lifetime](handshake.md#session-lifetime).
 
 ## Writing parameters (verified)
 

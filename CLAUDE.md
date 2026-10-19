@@ -38,7 +38,7 @@ Use `uv`/`uvx` for all Python work, `rg` for searching, `fd` for finding files.
 - Never raise the setpoint casually. Writes are capped at 140F absolute and 130F by default; the handbook range is 95-150F.
 - Timed-mode writes are stateful: the device counts days down and reverts at zero. The setpoint is a scalar, not per-mode.
 - GUEST mode has never been observed written; do not add it to any profile's `writable_modes` until a write is observed.
-- Exploratory reads at non-zero start offsets coincided with a change in Block 11 params 9 and 14 (causation unproven). Keep reads to what the app does.
+- Unbacked words in a read reply carry the previous read's buffer at the same index, and that persists across connections. This explains the old Block 11 params 9/14 change after offset reads. Reads at a non-zero start offset are fine within a block's served length; don't probe past it, and never treat an unbacked word as data.
 
 ## Hardware facts that cost time
 

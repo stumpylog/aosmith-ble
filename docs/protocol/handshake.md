@@ -126,6 +126,17 @@ RX  DB 02 07 0B 00 10 2E      <- stub, 7 bytes (challenge not accepted)
 RX  DB 02 27 0B 00 33 1C ...  <- real record, 39 bytes (after 0x80)
 ```
 
+## Session lifetime
+
+The heater ends a session about 29.5 minutes after the challenge was accepted, while the BLE link stays up (**verified on hardware**). The next request is answered with a 7-byte stub carrying `0x10` where a successful response carries `0x80`. The vendor app names `0x10` "session expired" (**from the vendor app**).
+
+- The lifetime runs from when the session was established, not from a fixed time of day. A session started after a link drop expired 29.5 minutes after the new connection (**verified on hardware**).
+- Some sessions lasted about 46 minutes instead. The cause is unknown (**unverified**).
+- Closing the link and running the full connection sequence again recovers every time (**verified on hardware**).
+- After expiry, running the handshake again from step 1 on the same open link starts a new session in about 3 seconds, without reconnecting (**verified on hardware**).
+
+Whether a write answered with `0x10` was applied is **unverified**, so it should not be re-sent blindly; read the value back on a new session instead.
+
 ## The assetID
 
 The `0xF1` response needs the 18-character assetID (for example `02iQk000000EXAMPLE`). Where it comes from:

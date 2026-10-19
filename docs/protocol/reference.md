@@ -25,7 +25,7 @@ The mode word (Block 11 param 15) is `(duration_days << 8) | mode`. See [Block 1
 | 2     | MORE_SAVINGS     |
 | 3     | MOST_SAVINGS     |
 
-The values are **unverified**. It overlays Hybrid, Heat Pump or Electric and is read from Block 11 param 20, which firmware 6.3 does not return ([Commands](commands.md#read-semantics)). It is not a hot water gauge ([Hot water availability](../hardware/hot-water-availability.md)).
+The values are **unverified**. The names are also **unverified**: the vendor app labels its separate energy usage preference control More Hot Water, More Savings and Most Savings, with wire values 1, 0 and 2 (**from a third-party report**), so these names may belong to that control, not to Hot Water Plus. It overlays Hybrid, Heat Pump or Electric and is read from Block 11 param 20, which firmware 6.3 does not return ([Commands](commands.md#read-semantics)). It is not a hot water gauge ([Hot water availability](../hardware/hot-water-availability.md)).
 
 ## Temperature encoding
 

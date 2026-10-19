@@ -6,6 +6,7 @@ from aosmith_ble.codecs import (
     ModeWord,
     encode_setpoint_f,
 )
+from aosmith_ble.const import HotWaterAvailability
 from aosmith_ble.exceptions import ValidationError
 
 
@@ -78,5 +79,39 @@ def test_ascii_swapped_decodes_known_model_string():
     assert codec.decode((0x5048,)) == "HP"
 
 
-def test_registry_has_exactly_the_five_bundled_codecs():
-    assert set(CODEC_REGISTRY) == {"c256", "mode_word", "u16", "ascii_swapped", "fault"}
+def test_registry_has_exactly_the_bundled_codecs():
+    assert set(CODEC_REGISTRY) == {
+        "c256",
+        "mode_word",
+        "u16",
+        "u48",
+        "ascii_swapped",
+        "fault",
+        "availability",
+    }
+
+
+def test_u48_decodes_high_word_first():
+    # 27:7-9 as read on the HPTS-50: 0x0000 000E B5C9 = 964041 Wh.
+    assert CODEC_REGISTRY["u48"].decode((0x0000, 0x000E, 0xB5C9)) == 964041
+
+
+def test_u48_all_ones_means_unavailable():
+    assert CODEC_REGISTRY["u48"].decode((0xFFFF, 0xFFFF, 0xFFFF)) is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "level"),
+    [
+        (0, HotWaterAvailability.LOW),
+        (5, HotWaterAvailability.MEDIUM),
+        (10, HotWaterAvailability.HIGH),
+    ],
+)
+def test_availability_decodes_known_levels(raw, level):
+    assert CODEC_REGISTRY["availability"].decode((raw,)) is level
+
+
+def test_availability_passes_an_unknown_value_through_raw():
+    value = CODEC_REGISTRY["availability"].decode((7,))
+    assert value == 7 and not isinstance(value, HotWaterAvailability)

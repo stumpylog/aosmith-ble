@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.0
+
+- New HPTS-50 fields, all read-only and all from one Block 27 read:
+  - `FieldName.POWER_W` (27:6), graded OK: the power in watts the heater
+    reports for the running component (356 W compressor, 4500 W element,
+    0 idle). It is the heater's own figure, not a measurement.
+  - `FieldName.ENERGY_WH` (27:7-9), graded OK: the running total of that
+    power in watt-hours, or `None` when the heater reports no value.
+  - `FieldName.HOT_WATER_AVAILABILITY` (27:23), graded PARTIAL so it is only
+    returned with `min_trust=Trust.PARTIAL`: a `HotWaterAvailability` level
+    (`LOW` 0, `MEDIUM` 5, `HIGH` 10), or the raw word for any other value.
+    It has been seen rising during a reheat but not yet falling.
+- New codecs `u48` and `availability`, and the `HotWaterAvailability` enum.
+- The Block 27 read's span depends on the trust a caller reads at: params 6-9
+  at the default, 6-23 with `Trust.PARTIAL`.
+- The heater ends each session about 29.5 minutes after it was established,
+  while the link stays up, and answers with status `0x10`. That reply now
+  raises the new `SessionExpiredError`, a `SessionError` subclass, instead of
+  a plain `ProtocolError`.
+- `async_get_state()` recovers from an expired session on its own: it re-runs
+  the session handshake on the open link, falls back to a full reconnect if
+  that fails, and retries the read once.
+- A write is never re-sent. Its pre-write state read is what recovers an
+  expired session. A write acknowledged with `0x10` raises
+  `SessionExpiredError`.
+
 ## 0.1.1
 
 - New `ChallengeRejectedError`, a `SessionError` subclass, raised when the

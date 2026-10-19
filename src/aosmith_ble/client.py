@@ -30,6 +30,7 @@ from .const import (
 )
 from .diagnostics import DiagnosticReport, probe_presence
 from .exceptions import (
+    AOSmithError,
     ChallengeRejectedError,
     ConfigurationIssue,
     ConnectionSlotsExhaustedError,
@@ -38,6 +39,7 @@ from .exceptions import (
     ProtocolError,
     ReadRefusedError,
     SessionError,
+    SessionExpiredError,
     UnknownDeviceError,
     UnsupportedConfigurationError,
     ValidationError,
@@ -588,6 +590,27 @@ class AOSmithBLEClient:
         """
         if not self.is_connected or not self._session_ok or self._profile is None:
             await self.connect()
+        try:
+            return await self._read_state_once(min_trust)
+        except SessionExpiredError:
+            # The heater ends each session about 29.5 minutes in while the
+            # link stays up. Reads are safe to repeat, so recover and retry
+            # once; a second expiry right away is a real failure.
+            await self._recover_session()
+            return await self._read_state_once(min_trust)
+
+    async def _recover_session(self) -> None:
+        """Re-run the session handshake on the open link; if that fails, fall
+        back to a full reconnect, the path proven on hardware."""
+        self._session_ok = False
+        try:
+            await self._establish_session()
+        except AOSmithError:
+            _LOGGER.debug("re-challenge on the open link failed; reconnecting")
+            await self.disconnect()
+            await self.connect()
+
+    async def _read_state_once(self, min_trust: Trust) -> FeatureSet:
         assert self._profile is not None
         profile = self._profile
 
@@ -713,6 +736,12 @@ class AOSmithBLEClient:
         device, so retrying could double-apply it.
         """
         rsp = await self._exchange(request)
+        if p.session_expired(rsp):
+            self._session_ok = False
+            raise SessionExpiredError(
+                "the heater ended the session before acknowledging the write; "
+                "it is not re-sent, so read the value back to see if it landed"
+            )
         if not p.write_accepted(rsp, block, param):
             raise ProtocolError(f"write rejected: {p.describe_frame(rsp)}")
         readback = await self._raw_read(block, param, len(expected_words))

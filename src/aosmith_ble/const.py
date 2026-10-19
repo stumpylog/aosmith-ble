@@ -24,6 +24,9 @@ HDR_RESPONSE = 0xDB  # device -> client
 
 STATUS_OK = 0x80  # trailing status byte on a successful response
 STATUS_REFUSED = 0x40  # returned instead of 0x80 for a read the device won't serve
+# Returned instead of 0x80 once the heater ends a session, about 29.5 minutes
+# after it was established, while the BLE link stays up.
+STATUS_SESSION_EXPIRED = 0x10
 
 
 class Cmd(IntEnum):
@@ -78,6 +81,16 @@ class Mode(IntEnum):
     GUEST = 3
     HYBRID = 4
     HEAT_PUMP = 5
+
+
+class HotWaterAvailability(IntEnum):
+    """Block 27 param 23. The heater raised it 5 -> 10 partway through a
+    reheat; the level names come from a third-party report, not from
+    hardware or the vendor app."""
+
+    LOW = 0
+    MEDIUM = 5
+    HIGH = 10
 
 
 class HotWaterPlus(IntEnum):

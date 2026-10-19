@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, NamedTuple, Protocol, runtime_checkable
 
 from . import protocol as p
+from .const import HotWaterAvailability
 from .exceptions import ValidationError
 
 if TYPE_CHECKING:
@@ -79,6 +80,23 @@ def _decode_u16(words: tuple[int, ...]) -> int:
     return word
 
 
+def _decode_u48(words: tuple[int, ...]) -> int | None:
+    """Three words, high word first. All ones is the heater's "no value"."""
+    if all(w == 0xFFFF for w in words):
+        return None
+    hi, mid, lo = words
+    return (hi << 32) | (mid << 16) | lo
+
+
+def _decode_availability(words: tuple[int, ...]) -> HotWaterAvailability | int:
+    """A known level, or the raw word when the heater reports anything else."""
+    (word,) = words
+    try:
+        return HotWaterAvailability(word)
+    except ValueError:
+        return word
+
+
 def _decode_ascii_swapped(words: tuple[int, ...]) -> str:
     payload = b"".join(w.to_bytes(2, "big") for w in words)
     return p.deswap_ascii(payload)
@@ -123,6 +141,8 @@ CODEC_REGISTRY: dict[str, Codec] = {
     "c256": _FunctionCodec("c256", _decode_c256, _encode_c256),
     "mode_word": _FunctionCodec("mode_word", _decode_mode_word, _encode_mode_word),
     "u16": _FunctionCodec("u16", _decode_u16),
+    "u48": _FunctionCodec("u48", _decode_u48),
+    "availability": _FunctionCodec("availability", _decode_availability),
     "ascii_swapped": _FunctionCodec("ascii_swapped", _decode_ascii_swapped),
     "fault": _FunctionCodec("fault", _decode_fault),
 }

@@ -53,6 +53,17 @@ class ChallengeRejectedError(SessionError):
     """
 
 
+class SessionExpiredError(SessionError):
+    """The heater ended the session; the BLE link may still be up.
+
+    Raised for a status 0x10 reply. The heater ends each session about 29.5
+    minutes after it was established. A subclass of ``SessionError`` so
+    existing handlers still catch it. Reads recover from it on their own by
+    re-running the session handshake; a write that gets it is not re-sent,
+    since whether it was applied is unknown.
+    """
+
+
 class NotPairedError(AOSmithError):
     """No assetID is available.
 

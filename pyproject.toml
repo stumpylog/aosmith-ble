@@ -4,7 +4,7 @@ requires = [ "hatchling" ]
 
 [project]
 name = "aosmith-ble"
-version = "0.1.1"
+version = "0.2.0"
 description = "Local Bluetooth LE client for A.O. Smith iCOMM heat pump water heaters"
 readme = "README.md"
 license = "MIT"

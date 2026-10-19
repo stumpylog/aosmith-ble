@@ -26,6 +26,8 @@ Temperatures are `word / 256` degrees Celsius (**verified on hardware** for the 
 
 ASCII inside a block is byte-swapped within each 16-bit word. Swap each pair before decoding. For example the model string `HPTS-50` followed by a NUL arrives as the byte pairs `PH ST 5- NUL0`, which swaps back to `HP TS -5 0NUL`.
 
+Block 0 param 0 is the firmware version, major in the high byte and minor in the low byte: `0x0603` is 6.3 (**verified on hardware**). Words 2-4, 7-9, 12 and 15 are not backed and echo the previous read ([Commands](commands.md#unbacked-words-echo-the-previous-read)).
+
 Block 0 holds the identity strings (**verified on hardware**, against a live Block 0 read after a button-pressed pairing):
 
 ```text
@@ -159,7 +161,21 @@ Field notes:
 | 116   | `LOAD_UP_HOUR_BEFORE_SHED`                                  |
 | 147   | `UTILITY_ENROLLMENT`                                        |
 
-**Unverified**, except the firmware string `6.3` at param 0 (**verified on hardware**). Words 28 and up are refused on this unit, so `PRODUCT_MAX_TEMPERATURE` and `PRODUCT_MIN_TEMPERATURE` are unread.
+The names are from the vendor app and their meanings are **unverified** except where the table below says otherwise. The firmware version is in Block 0 param 0, not here: param 0 read `0x0000` on this unit. Words 0-25 can be read; words 28 and up are refused, so `PRODUCT_MAX_TEMPERATURE` and `PRODUCT_MIN_TEMPERATURE` are unread.
+
+Observed on this unit while logging every 30 seconds through compressor and element runs:
+
+| Param | Observed | Meaning |
+| ----- | -------- | ------- |
+| 0 | 0 throughout | A third-party report reads the high byte as the active demand-response level (0 baseline, 6/7/8 levels 1-3, 9 load-up). **Unverified** here: no demand-response schedule is active. |
+| 2 | 11 idle, 12 heating; changed about a minute before the compressor started and after it stopped | **Unverified**, possibly an operating state. |
+| 6 | 356 with the compressor running, 4500 with an element running, 0 idle; changed within 30 seconds | Power in watts the heater reports for the running component (**verified on hardware**). The exact values match the components' ratings, so it is the heater's own figure, not a measurement. |
+| 7-9 | A 48-bit count, high word first; rose 6 per minute at 356 W and 75 per minute at 4500 W, stopped when idle, and kept its value across connections | Energy in watt-hours, the running total of param 6 (**verified on hardware**). Not checked against an external meter. All three words `0xFFFF` means no value (**from a third-party report**). |
+| 10-12 | Params 10 and 11 zero; param 12 moved in steps of 30 in HYBRID and 75 in ELECTRIC, rose after a hot water draw and was far higher in ELECTRIC | The low word of `OADR_GRID_PRESENT_ENERGY_LEVEL`. The names suggest a stored-energy figure in the CTA-2045 style, possibly watt-hours (**unverified**). |
+| 13-15 | Params 13 and 14 zero; param 15 read 1626 in HYBRID and 4875 in ELECTRIC and changed with the mode | The low word of `OADR_GRID_TOTAL_ENERGY_LEVEL`, possibly a total storage capacity for the current mode (**unverified**). |
+| 17-18 | Repeated params 8-9 | **Unverified.** |
+| 20-21 | `0xFFFF` | **Unverified.** |
+| 23 | 5 after morning showers, rising to 10 partway through the reheat; stayed 10 through a hot tap draw | Hot water availability (**partly verified on hardware**: seen rising, not yet seen falling). The names Low, Medium and High for 0, 5 and 10 are **from a third-party report**. See [Hot water availability](../hardware/hot-water-availability.md). |
 
 ### Block 28
 

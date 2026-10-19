@@ -18,9 +18,15 @@ from .const import (
     HDR_RESPONSE,
     STATUS_OK,
     STATUS_REFUSED,
+    STATUS_SESSION_EXPIRED,
 )
 from .crc import check, frame
-from .exceptions import ProtocolError, ReadRefusedError, SessionError
+from .exceptions import (
+    ProtocolError,
+    ReadRefusedError,
+    SessionError,
+    SessionExpiredError,
+)
 
 # -- Temperature -----------------------------------------------------------
 # word = round((degF - 32) / 1.8 * 256); the inverse recovers degF via
@@ -153,6 +159,11 @@ def write_accepted(rsp: bytes, block: int, param_idx: int) -> bool:
     return rsp[3] == block and rsp[4] == param_idx and rsp[5] == STATUS_OK
 
 
+def session_expired(rsp: bytes) -> bool:
+    """A 7-byte reply carrying status 0x10: the heater ended the session."""
+    return len(rsp) == 7 and rsp[-2] == STATUS_SESSION_EXPIRED
+
+
 def parse_read(
     rsp: bytes,
     *,
@@ -172,6 +183,13 @@ def parse_read(
     _validate(rsp, 7)
     status = rsp[-2]
     if status != STATUS_OK:
+        # Checked before the echo form: a 16-word request's echo carries the
+        # same byte, and treating it as expired only costs a re-handshake.
+        if session_expired(rsp):
+            raise SessionExpiredError(
+                f"the heater ended the session (status 0x{status:02X}): "
+                f"{describe_frame(rsp)}"
+            )
         if len(rsp) == 7 and status == STATUS_REFUSED:
             raise ReadRefusedError(
                 f"block {request_block} refused at start {request_start}"
