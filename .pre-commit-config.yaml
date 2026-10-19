@@ -37,3 +37,9 @@ repos:
         language: system
         pass_filenames: true
         exclude: "^uv.lock$"
+      - id: check-changelog
+        name: changelog follows Keep a Changelog
+        entry: python scripts/check_changelog.py
+        language: system
+        files: "^CHANGELOG\\.md$"
+        pass_filenames: true
