@@ -164,6 +164,51 @@ def session_expired(rsp: bytes) -> bool:
     return len(rsp) == 7 and rsp[-2] == STATUS_SESSION_EXPIRED
 
 
+# Reply command byte for each handshake request.
+_HANDSHAKE_REPLY = {
+    Cmd.INIT: 0x2F,
+    Cmd.CHALLENGE_REQUEST: 0x4F,
+    Cmd.CHALLENGE_RESPONSE: 0x1F,
+}
+_BLOCK_REPLY = 0x02  # reads and write ACKs share this reply command byte
+_STUB_LEN = 7
+
+
+def reply_matches(request: bytes, reply: bytes) -> bool:
+    """Whether ``reply`` answers ``request``.
+
+    This only picks which frame is the answer; CRC, length and status are
+    still checked by the parsers. A read reply must echo the request's block
+    and start and serve no more words than were asked for, so a late, wider
+    reply is never taken as a short readback. A write reply is a 7-byte frame
+    for the same block and param, or a session-expired stub from any block,
+    since whether that stub echoes the write is not known.
+
+    Two writes to the same param, or a write reply and a late read stub for
+    the same block and start, look identical on the wire; the readbacks on
+    the write path are the guard for those.
+    """
+    if len(request) < 2 or len(reply) < 2 or reply[0] != HDR_RESPONSE:
+        return False
+    cmd = request[1]
+    if cmd in _HANDSHAKE_REPLY:
+        return reply[1] == _HANDSHAKE_REPLY[cmd]
+    if reply[1] != _BLOCK_REPLY or len(request) < 6 or len(reply) < _STUB_LEN:
+        return False
+    same_address = reply[3:5] == request[3:5]
+    if cmd == Cmd.READ_BLOCK:
+        if not same_address:
+            return False
+        if len(reply) == _STUB_LEN:
+            return reply[5] != STATUS_OK
+        return (len(reply) - _STUB_LEN) // 2 <= request[5]
+    if cmd == Cmd.WRITE_BLOCK:
+        return len(reply) == _STUB_LEN and (
+            same_address or reply[5] == STATUS_SESSION_EXPIRED
+        )
+    return False
+
+
 def parse_read(
     rsp: bytes,
     *,

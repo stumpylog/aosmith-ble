@@ -27,6 +27,7 @@ from .exceptions import (
     UnknownDeviceError,
     UnsupportedConfigurationError,
     ValidationError,
+    WriteUnconfirmedError,
 )
 from .models import DeviceInfo, Fault, Feature, FeatureSet
 from .profiles import FieldName, FieldScope, Profile, Trust
@@ -60,6 +61,7 @@ __all__ = [
     "UnknownDeviceError",
     "UnsupportedConfigurationError",
     "ValidationError",
+    "WriteUnconfirmedError",
     "async_discover",
     "match_profile",
     "pairing_code_from_name",

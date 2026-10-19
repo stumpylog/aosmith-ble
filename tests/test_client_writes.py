@@ -5,7 +5,11 @@ import pytest
 import aosmith_ble.crc as crc_mod
 from aosmith_ble.client import AOSmithBLEClient
 from aosmith_ble.const import Mode
-from aosmith_ble.exceptions import ProtocolError, ValidationError
+from aosmith_ble.exceptions import (
+    ProtocolError,
+    ValidationError,
+    WriteUnconfirmedError,
+)
 from aosmith_ble import protocol as p
 from aosmith_ble.profiles import FieldSpec, Profile, Trust
 from aosmith_ble.profiles.bundled import BUNDLED_PROFILES
@@ -379,7 +383,7 @@ async def test_async_set_mode_raises_on_readback_mismatch():
 
 
 async def test_a_timed_out_write_is_not_retried():
-    """A write that gets no response raises and is sent exactly once: it may
+    """A write that gets no response is read back, never re-sent: it may
     still have landed on the device, so re-sending could double-apply it."""
     responses = _healthy_state_responses()
 
@@ -394,7 +398,8 @@ async def test_a_timed_out_write_is_not_retried():
 
     client = _client_with_matched_profile(responder)
     client._timeout = 0.05
-    with pytest.raises(ProtocolError, match="no response"):
+    # The readback is silent too, so the outcome stays unknown.
+    with pytest.raises(WriteUnconfirmedError, match="not acknowledged"):
         await client.async_set_setpoint(124.0)
     assert client._client.written.count(p.set_setpoint_request(124.0)) == 1
 

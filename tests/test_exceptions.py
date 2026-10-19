@@ -8,11 +8,21 @@ from aosmith_ble.exceptions import (
     SessionError,
     UnknownDeviceError,
     ValidationError,
+    WriteUnconfirmedError,
 )
 
 
 def test_read_refused_is_a_protocol_error():
     assert issubclass(ReadRefusedError, ProtocolError)
+
+
+def test_write_unconfirmed_is_a_protocol_error():
+    assert issubclass(WriteUnconfirmedError, ProtocolError)
+
+
+def test_write_unconfirmed_carries_what_was_written_and_read():
+    err = WriteUnconfirmedError("x", block=11, param=0, expected=(1,), actual=None)
+    assert (err.block, err.param, err.expected, err.actual) == (11, 0, (1,), None)
 
 
 def test_read_refused_is_distinct_from_session_error():

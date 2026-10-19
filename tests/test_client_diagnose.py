@@ -168,7 +168,7 @@ async def test_async_diagnose_end_to_end_output_carries_no_credential_material(
             return handshake
         if cmd == p.read_request(0, 0, 1):
             return [_response(bytes(2), block=0, start=0)]
-        return [_refused(0, 0)]
+        return [_refused(cmd[3], cmd[4])]
 
     client, _fake = await _make_client(responder, monkeypatch)
     diagnosis = await client.async_diagnose(max_block=0)
@@ -196,7 +196,7 @@ async def test_async_diagnose_disconnects_when_the_link_drops_midway(monkeypatch
         if cmd == p.read_request(1, 0, 1):
             fake.is_connected = False  # the link drops right before block 1's reply
             return []
-        return [_refused(0, 0)]
+        return [_refused(cmd[3], cmd[4])]
 
     client, fake = await _make_client(responder, monkeypatch)
     client._timeout = 0.05
@@ -224,7 +224,7 @@ async def test_async_diagnose_tolerates_a_single_probe_timeout(monkeypatch):
             return []  # block 1 times out
         if cmd == p.read_request(2, 0, 1):
             return [_response(bytes(2), block=2, start=0)]
-        return [_refused(0, 0)]
+        return [_refused(cmd[3], cmd[4])]
 
     client, _fake = await _make_client(responder, monkeypatch)
     client._timeout = 0.05
@@ -299,7 +299,7 @@ async def test_async_diagnose_closes_an_existing_connection_instead_of_orphaning
         handshake = _handshake_responses(cmd)
         if handshake is not None:
             return handshake
-        return [_refused(0, 0)]
+        return [_refused(cmd[3], cmd[4])]
 
     old_link = FakeBleakClient(responder)
     new_link = FakeBleakClient(responder)
@@ -346,7 +346,7 @@ async def test_async_diagnose_waits_for_the_client_lock(monkeypatch):
         handshake = _handshake_responses(cmd)
         if handshake is not None:
             return handshake
-        return [_refused(0, 0)]
+        return [_refused(cmd[3], cmd[4])]
 
     client, fake = await _make_client(responder, monkeypatch)
     written_before = len(fake.written)
@@ -377,7 +377,7 @@ async def test_async_diagnose_reports_block_presence_for_an_unmatched_device(
             return [_response(bytes(2 * 16) + b"NOTHPTS!", block=0, start=0)]
         if cmd == p.read_request(1, 0, 1):
             return [_response(bytes(2), block=1, start=0)]
-        return [_refused(0, 0)]  # every other probed block refuses
+        return [_refused(cmd[3], cmd[4])]  # every other probed block refuses
 
     client, _fake = await _make_client(responder, monkeypatch)
     report = client.profile  # sanity: nothing matched yet
@@ -404,7 +404,7 @@ async def test_async_diagnose_reports_the_matched_profile_when_the_device_matche
             payload += bytes(2 * 15)
             payload += HPTS50_MODEL_BYTES
             return [_response(bytes(payload), block=0, start=0)]
-        return [_refused(0, 0)]
+        return [_refused(cmd[3], cmd[4])]
 
     client, _fake = await _make_client(responder, monkeypatch)
     diagnosis = await client.async_diagnose(max_block=0)
@@ -436,7 +436,7 @@ async def test_async_diagnose_does_not_corrupt_state_for_a_later_real_connect(
             return [_response(bytes(10), block=0, start=36)]
         if cmd == p.read_request(26, 2, 1):
             return [_response(bytes([0, 0]), block=26, start=2)]
-        return [_refused(0, 0)]
+        return [_refused(cmd[3], cmd[4])]
 
     fake = FakeBleakClient(responder)
 

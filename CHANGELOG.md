@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `WriteUnconfirmedError`, raised when a write is not acknowledged and a
+  readback cannot show it took effect.
+
+### Changed
+
+- A Bluetooth error while sending a request is raised as `NotConnectedError`.
+- A write answered with session expired is now settled by readback: it
+  succeeds if the value applied, otherwise raises `WriteUnconfirmedError`
+  (previously `SessionExpiredError`). A refused write still raises
+  `ProtocolError`.
+
+### Fixed
+
+- A reply that arrives after its request timed out, or one that answers
+  nothing, is dropped instead of being taken as the answer to the next
+  request.
+- A lost link, or a `disconnect()` while a request is in flight, fails that
+  request at once instead of after the full timeout. The disconnected
+  callback is now always registered.
+- `async_release()` starts its window before closing the link, so nothing
+  can reconnect while it closes.
+- A write whose acknowledgement never arrives is settled by reading the
+  value back instead of failing with an unknown outcome. It is never re-sent.
+
 ## [0.2.0] - 2026-10-19
 
 ### Added

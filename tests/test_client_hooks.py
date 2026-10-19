@@ -44,7 +44,8 @@ async def test_defaults_pass_bleak_client_and_no_extra_keywords(monkeypatch):
     assert len(calls) == 1
     assert calls[0]["cls"] is BleakClient
     assert calls[0]["device"] is device
-    assert calls[0]["kwargs"] == {}
+    # Always registered: link loss must end the request in flight.
+    assert set(calls[0]["kwargs"]) == {"disconnected_callback"}
 
 
 async def test_client_class_is_passed_through(monkeypatch):
@@ -212,14 +213,14 @@ async def test_raising_callback_is_swallowed(monkeypatch):
     calls[0]["kwargs"]["disconnected_callback"](fake)
 
 
-async def test_no_callback_passed_when_hook_unset(monkeypatch):
+async def test_link_loss_without_hook_is_harmless(monkeypatch):
     fake = FakeBleakClient(_full_happy_path_responder())
     calls = patch_establish(monkeypatch, fake)
 
     client = AOSmithBLEClient(device=object(), pairing_code=b"123456")
     await client.connect()
 
-    assert "disconnected_callback" not in calls[0]["kwargs"]
+    calls[0]["kwargs"]["disconnected_callback"](fake)  # must not raise
 
 
 async def test_reconnect_after_unexpected_drop_closes_the_stale_link(monkeypatch):

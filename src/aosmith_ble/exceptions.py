@@ -25,6 +25,34 @@ class ReadRefusedError(ProtocolError):
     """
 
 
+class WriteUnconfirmedError(ProtocolError):
+    """A write was sent but not acknowledged, and a readback could not show
+    that it took effect. It was not re-sent.
+
+    Raised when the acknowledgement never arrived, the link was lost, the
+    send itself failed, or the heater answered with a status other than
+    accepted (0x80) or refused (0x40). ``expected`` holds the words written
+    and ``actual`` the words read back, or None when the readback itself
+    failed (the cause is chained). A subclass of ``ProtocolError``, so
+    handlers for the earlier timeout error still catch it.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        block: int,
+        param: int,
+        expected: tuple[int, ...],
+        actual: tuple[int, ...] | None,
+    ) -> None:
+        super().__init__(message)
+        self.block = block
+        self.param = param
+        self.expected = expected
+        self.actual = actual
+
+
 class NotConnectedError(AOSmithError):
     """An operation needed a live connection and there wasn't one."""
 

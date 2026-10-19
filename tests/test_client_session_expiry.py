@@ -3,7 +3,8 @@ while the BLE link stays up, and answers the next request with status 0x10.
 
 A read recovers by re-running the session handshake on the open link, then
 by a full reconnect if that fails, and is retried once. A write is never
-re-sent: its pre-write state read is what recovers the session.
+re-sent: its pre-write state read is what recovers the session, and an
+expired ACK is settled by reading the value back.
 """
 
 from __future__ import annotations
@@ -14,7 +15,11 @@ import aosmith_ble.crc as crc_mod
 from aosmith_ble import client as client_mod
 from aosmith_ble import protocol as p
 from aosmith_ble.const import STATUS_SESSION_EXPIRED
-from aosmith_ble.exceptions import SessionError, SessionExpiredError
+from aosmith_ble.exceptions import (
+    SessionError,
+    SessionExpiredError,
+    WriteUnconfirmedError,
+)
 from aosmith_ble.profiles import FieldName
 from fake_transport import FakeBleakClient
 from test_client_hooks import patch_establish
@@ -24,6 +29,7 @@ from test_client_writes import (
     _client_with_matched_profile,
     _healthy_state_responses,
     _is_block27_read,
+    _read_response,
 )
 
 F1_PREFIX = bytes([0xBD, 0xF1, 0x19, 0x01])
@@ -158,19 +164,25 @@ async def test_a_write_after_expiry_recovers_in_its_state_read_and_is_sent_once(
     assert client._client.written.count(write) == 1
 
 
-async def test_an_expired_write_ack_raises_and_the_write_is_not_resent(monkeypatch):
+async def test_an_expired_write_ack_is_settled_by_readback_and_not_resent(
+    monkeypatch,
+):
     monkeypatch.setattr(client_mod, "_SETTLE", 0.0)
     heater = ExpiringHeater(expire_reads=0)
-    write = p.set_setpoint_request(124.0)
+    write = p.set_setpoint_request(120.0)
+    old_value = _read_response(11, 0, bytes([0x33, 0x1C]))
 
     def responder(cmd: bytes) -> list[bytes]:
         if cmd == write:
             return [_expired(11, 0)]
+        if cmd == p.read_request(11, 0, 1):
+            return [old_value]
         return heater(cmd)
 
     client = _client(heater)
     client._client._responder = responder
 
-    with pytest.raises(SessionExpiredError):
-        await client.async_set_setpoint(124.0)
+    with pytest.raises(WriteUnconfirmedError, match="0x10"):
+        await client.async_set_setpoint(120.0)
+    assert heater.handshakes == 1  # the session was recovered for the readback
     assert client._client.written.count(write) == 1

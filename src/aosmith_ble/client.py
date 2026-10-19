@@ -25,6 +25,8 @@ from .const import (
     CHAR_TX_UUID,
     MAX_WORDS_PER_READ,
     NAME_PREFIX,
+    STATUS_REFUSED,
+    STATUS_SESSION_EXPIRED,
     Block,
     Mode,
 )
@@ -43,6 +45,7 @@ from .exceptions import (
     UnknownDeviceError,
     UnsupportedConfigurationError,
     ValidationError,
+    WriteUnconfirmedError,
 )
 from .models import DeviceInfo, Feature, FeatureSet
 from .profiles import FieldName, FieldScope, FieldSpec, Profile, Trust, trust_at_least
@@ -66,6 +69,12 @@ _UNITS_PARAM = 2
 # enough to brute-force against them. Publishing any of the three is
 # publishing control of the device to anyone in radio range.
 _SENSITIVE_CAPTURE_LABELS = frozenset({"init", "challenge", "challenge_response"})
+
+
+class _LinkClosedError(NotConnectedError):
+    """This client closed the link while a request was in flight. Kept apart
+    from a dropped link so the write path never reconnects behind a
+    deliberate close."""
 
 
 def pairing_code_from_name(name: str) -> bytes:
@@ -111,7 +120,8 @@ class AOSmithBLEClient:
         )
         self._timeout = timeout
         self._client: BleakClient | None = None
-        self._queue: asyncio.Queue[bytes] = asyncio.Queue()
+        # The one request in flight and the future its reply completes.
+        self._pending: tuple[bytes, asyncio.Future[bytes]] | None = None
         self._lock = asyncio.Lock()
         self._session_ok = False
         self._profile: Profile | None = None
@@ -198,8 +208,8 @@ class AOSmithBLEClient:
         refresh = self._make_refresh(device)
         if refresh is not None:
             extra["ble_device_callback"] = refresh
-        if self._on_disconnect is not None:
-            extra["disconnected_callback"] = self._on_link_lost
+        # Always registered: a lost link must end the request in flight.
+        extra["disconnected_callback"] = self._on_link_lost
 
         try:
             self._client = await bleak_retry_connector.establish_connection(
@@ -287,6 +297,9 @@ class AOSmithBLEClient:
         self._session_ok = False
         self._profile = None
         self._info = DeviceInfo()
+        self._fail_pending(
+            _LinkClosedError("the link was closed while waiting for a reply")
+        )
         client, self._client = self._client, None
         if client is not None:
             # Shielded so a cancelled caller (a close timeout) cannot leave
@@ -297,8 +310,9 @@ class AOSmithBLEClient:
         """Drop the connection and refuse to reconnect for `seconds`, so the
         manufacturer's app (the natural recovery path if this library ever
         leaves the device in an unwanted state) can connect instead."""
-        await self.disconnect()
+        # Set first, so nothing that runs while the link closes can reconnect.
         self._released_until = time.monotonic() + seconds
+        await self.disconnect()
 
     async def async_close(self) -> None:
         """Close the link for good.
@@ -424,10 +438,23 @@ class AOSmithBLEClient:
         return tuple(entries)
 
     def _on_link_lost(self, link: BleakClient) -> None:
-        """bleak's disconnected callback. Reports only an unexpected loss:
+        """bleak's disconnected callback. Acts only on an unexpected loss:
         a deliberate `disconnect()` and the failed-`connect()` teardown both
-        swap `self._client` out before closing, so `link` is no longer it."""
-        if link is not self._client or self._on_disconnect is None:
+        swap `self._client` out before closing, so `link` is no longer it.
+
+        Ends the request in flight at once rather than leaving it to time
+        out, then reports the loss to the host hook, if one was given."""
+        if link is not self._client:
+            return
+        self._session_ok = False
+        if self._pending is not None:
+            self._fail_pending(
+                NotConnectedError(
+                    "the link was lost while waiting for a reply to "
+                    f"{p.describe_frame(self._pending[0])}"
+                )
+            )
+        if self._on_disconnect is None:
             return
         try:
             self._on_disconnect()
@@ -439,22 +466,55 @@ class AOSmithBLEClient:
         if p.is_at_command(raw):
             _LOGGER.debug("dropping unsolicited AT command (%d bytes)", len(raw))
             return
-        self._queue.put_nowait(raw)
+        pending = self._pending
+        if pending is not None and p.reply_matches(pending[0], raw):
+            if not pending[1].done():
+                pending[1].set_result(raw)
+            return
+        _LOGGER.debug(
+            "dropping a reply that answers nothing pending (%s)", p.describe_frame(raw)
+        )
+
+    def _fail_pending(self, err: AOSmithError) -> None:
+        """End the request in flight, if any, with `err`."""
+        if self._pending is not None and not self._pending[1].done():
+            self._pending[1].set_exception(err)
 
     async def _exchange(
         self, cmd: bytes, timeout: float | None = None, *, label: str = ""
     ) -> bytes:
         if self._client is None or not self._client.is_connected:
             raise NotConnectedError("not connected")
-        while not self._queue.empty():
-            self._queue.get_nowait()
-        await self._client.write_gatt_char(CHAR_TX_UUID, cmd, response=True)
+        if self._pending is not None:
+            raise ProtocolError("another request is already in flight")
+        # Registered before the write: a reply can arrive during it.
+        entry = (cmd, asyncio.get_running_loop().create_future())
+        self._pending = entry
+        fut = entry[1]
         try:
-            response = await asyncio.wait_for(
-                self._queue.get(), timeout or self._timeout
-            )
-        except asyncio.TimeoutError as err:
-            raise ProtocolError(f"no response to {p.describe_frame(cmd)}") from err
+            try:
+                await self._client.write_gatt_char(CHAR_TX_UUID, cmd, response=True)
+            except Exception as err:
+                # A disconnect() while the send waited fails it too; report
+                # the deliberate close, not a lost link, so nothing reconnects.
+                if (
+                    fut.done()
+                    and not fut.cancelled()
+                    and isinstance(fut.exception(), _LinkClosedError)
+                ):
+                    raise fut.exception() from err
+                raise NotConnectedError(
+                    f"the request could not be sent: {p.describe_frame(cmd)}"
+                ) from err
+            try:
+                response = await asyncio.wait_for(fut, timeout or self._timeout)
+            except asyncio.TimeoutError as err:
+                raise ProtocolError(f"no response to {p.describe_frame(cmd)}") from err
+        finally:
+            if self._pending is entry:
+                self._pending = None
+            if fut.done() and not fut.cancelled():
+                fut.exception()  # retrieved, so asyncio does not log it
         if self._capture_sink is not None:
             self._capture_sink.append(
                 {
@@ -605,6 +665,8 @@ class AOSmithBLEClient:
         self._session_ok = False
         try:
             await self._establish_session()
+        except _LinkClosedError:
+            raise  # closed on purpose: never reconnect behind it
         except AOSmithError:
             _LOGGER.debug("re-challenge on the open link failed; reconnecting")
             await self.disconnect()
@@ -678,7 +740,8 @@ class AOSmithBLEClient:
     #
     # The only two public write methods in this package are below, and both
     # funnel through _write_and_verify. Nothing else anywhere writes a
-    # parameter to a device.
+    # parameter to a device, and nothing re-sends one: a write that is not
+    # acknowledged is settled by reading the value back.
 
     _TIMED_MODES = (Mode.ELECTRIC, Mode.VACATION, Mode.GUEST)
 
@@ -730,27 +793,115 @@ class AOSmithBLEClient:
     ) -> None:
         """Write one parameter, confirm the ack, then read the value back.
 
-        A mismatch on read-back raises; it is never silently re-sent or
-        corrected. A write that times out raises out of ``_exchange`` and is
-        never retried either: a timed-out write may still have landed on the
-        device, so retrying could double-apply it.
+        A 0x80 reply is the acknowledgement; a mismatch on the read-back that
+        follows raises and is never silently re-sent or corrected. A 0x40
+        reply is a refusal and raises. Any other outcome once the write was
+        handed to the transport (no reply, a lost link, a failed send, another
+        status) leaves the outcome unknown, so it is settled by a read-back
+        instead. The write itself is never re-sent: it may have landed, and
+        re-sending could double-apply it.
         """
-        rsp = await self._exchange(request)
-        if p.session_expired(rsp):
-            self._session_ok = False
-            raise SessionExpiredError(
-                "the heater ended the session before acknowledging the write; "
-                "it is not re-sent, so read the value back to see if it landed"
+        if not self.is_connected:
+            raise NotConnectedError("not connected; the write was not sent")
+        try:
+            rsp = await self._exchange(request)
+        except _LinkClosedError as err:
+            # Closed on purpose (a disconnect or release): never reconnect
+            # behind it, so the outcome stays unknown.
+            raise WriteUnconfirmedError(
+                f"write to block {block} param {param} was not acknowledged "
+                "before the link was closed; it was not re-sent",
+                block=block,
+                param=param,
+                expected=expected_words,
+                actual=None,
+            ) from err
+        except NotConnectedError as err:
+            await self._settle_unconfirmed_write(
+                block, param, expected_words, "the link was lost", err
             )
-        if not p.write_accepted(rsp, block, param):
-            raise ProtocolError(f"write rejected: {p.describe_frame(rsp)}")
-        readback = await self._raw_read(block, param, len(expected_words))
-        actual = tuple(p.param(readback, i) for i in range(len(expected_words)))
+            return
+        except ProtocolError as err:
+            await self._settle_unconfirmed_write(
+                block, param, expected_words, "no reply", err
+            )
+            return
+        try:
+            accepted = p.write_accepted(rsp, block, param)
+        except ProtocolError as err:
+            await self._settle_unconfirmed_write(
+                block, param, expected_words, "malformed reply", err
+            )
+            return
+        if not accepted:
+            status = rsp[5]
+            if status == STATUS_REFUSED:
+                raise ProtocolError(f"write rejected: {p.describe_frame(rsp)}")
+            if status == STATUS_SESSION_EXPIRED:
+                self._session_ok = False
+            await self._settle_unconfirmed_write(
+                block, param, expected_words, f"status 0x{status:02X}", None
+            )
+            return
+        actual = await self._read_back(block, param, len(expected_words))
         if actual != expected_words:
             raise ValidationError(
                 f"write to block {block} param {param} did not take effect: "
                 f"wrote {expected_words}, read back {actual}"
             )
+
+    async def _read_back(self, block: int, param: int, words: int) -> tuple[int, ...]:
+        """Read a written parameter, recovering an expired session once."""
+        try:
+            readback = await self._raw_read(block, param, words)
+        except SessionExpiredError:
+            await self._recover_session()
+            readback = await self._raw_read(block, param, words)
+        return tuple(p.param(readback, i) for i in range(words))
+
+    async def _settle_unconfirmed_write(
+        self,
+        block: int,
+        param: int,
+        expected: tuple[int, ...],
+        reason: str,
+        cause: BaseException | None,
+    ) -> None:
+        """Decide an unacknowledged write by reading it back, never by
+        re-sending it: success if the device holds the value, otherwise
+        `WriteUnconfirmedError`."""
+        try:
+            if not self.is_connected:
+                await self.connect()
+            elif not self._session_ok:
+                await self._recover_session()
+            actual = await self._read_back(block, param, len(expected))
+        except Exception as err:
+            raise WriteUnconfirmedError(
+                f"write to block {block} param {param} was not acknowledged "
+                f"({reason}) and could not be read back; it was not re-sent",
+                block=block,
+                param=param,
+                expected=expected,
+                actual=None,
+            ) from err
+        if actual != expected:
+            raise WriteUnconfirmedError(
+                f"write to block {block} param {param} was not acknowledged "
+                f"({reason}) and the readback shows {actual}, not {expected}; "
+                "it was not re-sent",
+                block=block,
+                param=param,
+                expected=expected,
+                actual=actual,
+            ) from cause
+        _LOGGER.warning(
+            "write to block %d param %d was not acknowledged (%s), but the "
+            "readback shows it applied",
+            block,
+            param,
+            reason,
+        )
 
     async def async_set_setpoint(self, degf: float) -> None:
         """Set the operating setpoint in Fahrenheit. Refused outside the

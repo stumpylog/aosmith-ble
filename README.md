@@ -65,6 +65,8 @@ client = AOSmithBLEClient(
 
 Every write goes through one profile-gated path: setpoint and mode are checked against the profile's verified limits (never above 140F, 130F by default), a fault-active device is read-only, and every write is read back and compared before the call succeeds. The public API cannot write an arbitrary block or parameter.
 
+No write is ever sent twice. The heater confirms a write with an acknowledgement, and a refusal raises `ProtocolError` at once. A write that gets no reply, loses its link, or gets any other status is read back instead. If the readback shows the value, the call succeeds and logs a warning. Otherwise it raises `WriteUnconfirmedError`, a `ProtocolError` that carries the words written (`expected`) and the words read back (`actual`, or `None` if the readback failed). Read state before trying again: a timed mode counts its days down, so sending it again restarts the countdown.
+
 ## What this doesn't do (yet)
 
 No current-tank-temperature reading (the manufacturer's app never reads it either). No Home Assistant integration; that is a separate, HACS-distributed package. No support for devices other than the bundled profile: `connect()` refuses an unmatched device. Diagnostics are an explicit, separate call, never part of the automatic connection flow.

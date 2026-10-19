@@ -2,6 +2,7 @@ import time
 
 import pytest
 
+from aosmith_ble import protocol as p
 from aosmith_ble.client import AOSmithBLEClient
 from aosmith_ble.exceptions import NotConnectedError
 
@@ -31,35 +32,36 @@ async def test_connect_succeeds_again_after_release_window_elapses():
     assert time.monotonic() >= client._released_until
 
 
-async def test_exchange_capture_sink_records_labeled_request_and_response():
-    responses = [bytes.fromhex("aabbcc")]
+_FAULT_READ = p.read_request(2, 7, 1)
+_FAULT_REPLY = bytes.fromhex(
+    "db020902070000809c"
+)  # fixture read_response_block2_fault_healthy
 
-    def responder(_cmd: bytes) -> list[bytes]:
-        return responses
 
-    fake = FakeBleakClient(responder)
+def _client_answering_the_fault_read() -> AOSmithBLEClient:
+    fake = FakeBleakClient(lambda cmd: [_FAULT_REPLY] if cmd == _FAULT_READ else [])
     client = AOSmithBLEClient(device="AA:BB:CC:DD:EE:FF", pairing_code=b"123456")
     client._client = fake
     fake.is_connected = True
     fake._notify_callback = client._on_notify
+    return client
 
+
+async def test_exchange_capture_sink_records_labeled_request_and_response():
+    client = _client_answering_the_fault_read()
     client._capture_sink = []
-    await client._exchange(b"\x11\x22", label="my_label")
+    await client._exchange(_FAULT_READ, label="my_label")
 
     assert client._capture_sink == [
-        {"label": "my_label", "request_hex": "1122", "response_hex": "aabbcc"}
+        {
+            "label": "my_label",
+            "request_hex": _FAULT_READ.hex(),
+            "response_hex": _FAULT_REPLY.hex(),
+        }
     ]
 
 
 async def test_exchange_does_not_capture_when_sink_is_none():
-    def responder(_cmd: bytes) -> list[bytes]:
-        return [bytes.fromhex("aabbcc")]
-
-    fake = FakeBleakClient(responder)
-    client = AOSmithBLEClient(device="AA:BB:CC:DD:EE:FF", pairing_code=b"123456")
-    client._client = fake
-    fake.is_connected = True
-    fake._notify_callback = client._on_notify
-
-    await client._exchange(b"\x11\x22", label="ignored")
+    client = _client_answering_the_fault_read()
+    await client._exchange(_FAULT_READ, label="ignored")
     assert client._capture_sink is None
